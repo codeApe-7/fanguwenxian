@@ -14,11 +14,11 @@ export interface Enemy {
   loot: number;
 }
 
-export function makeEnemy(p: Player): Enemy {
+export function makeEnemy(p: Player, boost = 0): Enemy {
   const tier = Math.min(2, Math.floor(p.realmIdx / 3));
   const name = pick(ENEMY_POOL[tier]);
   const abs = p.realmIdx * 4 + p.stageIdx;
-  const level = Math.max(0, abs + pick([-1, 0, 0, 1, 1]));
+  const level = Math.max(0, abs + pick([-1, 0, 0, 1, 1]) + boost);
   return {
     name,
     hp: 30 + level * 18,
@@ -35,8 +35,9 @@ export async function combat(
   leads: FemaleLead[],
   io: GameIO,
   intro?: string, // 可选开场白，占位符 {enemy} 会被替换为敌人名
+  boost = 0,      // 敌人等级加成（宗门任务难度）
 ): Promise<CombatResult> {
-  const enemy = makeEnemy(p);
+  const enemy = makeEnemy(p, boost);
   await io.clear();
   const line = (intro ?? '你于荒野之中遭遇了 {enemy}！').replace('{enemy}', red(enemy.name));
   await io.narrate(line);

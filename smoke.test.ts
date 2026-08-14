@@ -131,6 +131,30 @@ async function main() {
   await sectMenu(sectState, io);
   assert(sectP.sect === '散修', '无红颜不得入合欢宗');
 
+  console.log('· 宗门任务（难度标注与境界缩放）');
+  const tkP = createPlayer('测试', ORIGINS[0], SECTS[1]); // 丹霞谷
+  const tkState: GameState = { player: tkP, leads: [] };
+  io.queue = ['1', '11']; // 接任务 → 看守灵田（简单·巡逻）
+  const tkFired = await sectMenu(tkState, io);
+  assert(tkFired === true, '巡逻任务消耗一年');
+  assert(tkP.sectContribution === 15, `炼气巡逻贡献 +15（实际 ${tkP.sectContribution}）`);
+  tkP.realmIdx = 3; // 元婴：贡献 ×2.5
+  tkP.sectContribution = 0;
+  io.queue = ['1', '11'];
+  await sectMenu(tkState, io);
+  assert(tkP.sectContribution === 38, `元婴巡逻贡献 +38（实际 ${tkP.sectContribution}）`);
+  tkP.realmIdx = 0;
+  tkP.sectContribution = 0;
+  io.queue = ['1', '1']; // 接任务 → 剿灭妖王（困难·敌人更强）
+  await sectMenu(tkState, io);
+  assert(tkP.sectContribution > 0, '困难战斗任务可执行并获得贡献');
+  tkP.pills['聚灵丹'] = 0;
+  tkP.sectContribution = 0;
+  io.queue = ['1', '7', '0', '0']; // 接任务 → 上交聚灵丹（无丹→返回列表）→ 返回 → 返回宗门
+  const tkNoFire = await sectMenu(tkState, io);
+  assert(tkNoFire === false, '材料不足不消耗时间');
+  assert(tkP.sectContribution === 0, '未完成不增贡献');
+
   console.log('· 职阶放大宗门效果');
   const atkP = createPlayer('测试', ORIGINS[0], SECTS[6]); // 太乙剑宗
   const atk0 = playerAttack(atkP);

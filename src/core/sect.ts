@@ -20,79 +20,111 @@ const MASTER_SALARY = 100;    // 宗主每年俸禄（灵石）
 interface SectTaskDef {
   title: string;
   kind: 'combat' | 'collect' | 'craft' | 'patrol';
-  intro?: string;   // combat 开场白（{enemy} 占位）
+  diff: 1 | 2 | 3;   // 难度星级：1 简单 / 2 普通 / 3 困难
+  boost?: number;    // combat 敌人等级加成（困难任务敌人更强）
+  intro?: string;    // combat 开场白（{enemy} 占位）
   material?: string;
   matN?: number;
   pill?: string;
-  reward: number;   // 贡献
+  reward: number;    // 基础贡献（再按境界缩放）
+}
+
+// 难度标注与配色（简单=绿 / 普通=黄 / 困难=红）
+const DIFF_LABEL: Record<number, string> = { 1: '简单', 2: '普通', 3: '困难' };
+const DIFF_COLOR: Record<number, (s: string) => string> = { 1: green, 2: yellow, 3: red };
+
+// 贡献随境界线性上浮：炼气 ×1.0，筑基 ×1.5，结丹 ×2.0，元婴 ×2.5 … 渡劫 ×5.0
+// 理由：战斗敌人本就随境界变强（风险上升），固定奖励会让高境界任务失去性价比，
+//       这也是“贡献太难加”的根因——职阶门槛按境界递增，奖励却停在 10~40。
+function taskReward(base: number, realmIdx: number): number {
+  return Math.round(base * (1 + realmIdx * 0.5));
 }
 
 const TASKS: SectTaskDef[] = [
-  { title: '属地闹妖，前往除妖。', kind: 'combat', intro: '宗门属地有妖物作乱——正是 {enemy}！', reward: 30 },
-  { title: '追捕叛逃的弃徒。', kind: 'combat', intro: '叛逃弃徒负隅顽抗——正是 {enemy}！', reward: 30 },
-  { title: '护送灵药去往坊市。', kind: 'combat', intro: '半路杀出劫道的强敌——正是 {enemy}！', reward: 35 },
-  { title: '采集灵草 ×2 上交药园。', kind: 'collect', material: '灵草', matN: 2, reward: 15 },
-  { title: '采集灵花 ×1 上交丹房。', kind: 'collect', material: '灵花', matN: 1, reward: 20 },
-  { title: '上交凝气丹 ×1。', kind: 'craft', pill: '凝气丹', reward: 25 },
-  { title: '上交聚灵丹 ×1。', kind: 'craft', pill: '聚灵丹', reward: 40 },
-  { title: '巡视宗门属地一年。', kind: 'patrol', reward: 10 },
-  { title: '看守灵田一年。', kind: 'patrol', reward: 10 },
+  // —— 困难（三星）：高风险高回报，敌人等级额外 +1~+2 ——
+  { title: '剿灭作乱妖王，荡平其巢穴。', kind: 'combat', diff: 3, boost: 2, intro: '妖王凶焰滔天，携众小妖扑杀而来——正是 {enemy}！', reward: 80 },
+  { title: '追捕叛逃真传弟子。', kind: 'combat', diff: 3, boost: 1, intro: '叛逃真传负隅顽抗，手段狠辣——正是 {enemy}！', reward: 70 },
+  { title: '深入禁地取回失传灵药。', kind: 'combat', diff: 3, boost: 1, intro: '禁地之中守护灵药的上古凶兽现身——正是 {enemy}！', reward: 75 },
+  // —— 普通（二星）：中等回报，敌人与游历相当 ——
+  { title: '属地闹妖，前往除妖。', kind: 'combat', diff: 2, intro: '宗门属地有妖物作乱——正是 {enemy}！', reward: 45 },
+  { title: '追捕叛逃的弃徒。', kind: 'combat', diff: 2, intro: '叛逃弃徒负隅顽抗——正是 {enemy}！', reward: 45 },
+  { title: '护送灵药去往坊市。', kind: 'combat', diff: 2, intro: '半路杀出劫道的强敌——正是 {enemy}！', reward: 50 },
+  { title: '上交聚灵丹 ×1。', kind: 'craft', diff: 2, pill: '聚灵丹', reward: 40 },
+  // —— 简单（一星）：零/低风险，稳妥但回报较低 ——
+  { title: '采集灵草 ×2 上交药园。', kind: 'collect', diff: 1, material: '灵草', matN: 2, reward: 20 },
+  { title: '采集灵花 ×1 上交丹房。', kind: 'collect', diff: 1, material: '灵花', matN: 1, reward: 25 },
+  { title: '上交凝气丹 ×1。', kind: 'craft', diff: 1, pill: '凝气丹', reward: 30 },
+  { title: '巡视宗门属地一年。', kind: 'patrol', diff: 1, reward: 15 },
+  { title: '看守灵田一年。', kind: 'patrol', diff: 1, reward: 15 },
 ];
 
 function rankOf(p: { sectRank: number }): number {
   return Math.min(p.sectRank ?? 0, SECT_RANKS.length - 1);
 }
 
-/** 执行一个宗门任务，返回是否消耗时间。 */
+/** 执行一个宗门任务，返回是否消耗时间。玩家自选任务，任务带难度标注与境界缩放后的贡献。 */
 async function takeTask(state: GameState, io: GameIO): Promise<boolean> {
   const p = state.player;
-  const task = pick(TASKS);
-  io.print(`【宗门任务】${task.title}（完成后贡献 +${task.reward}）`);
-  const ch = await io.ask('是否接下？(y/n)', ['y', 'n'], 'y');
-  if (ch !== 'y') return false;
+  while (true) {
+    io.print(cyan('—— 宗门任务 ——'));
+    TASKS.forEach((task, i) => {
+      const reward = taskReward(task.reward, p.realmIdx);
+      io.print(` ${i + 1}) ${task.title} ${DIFF_COLOR[task.diff](DIFF_LABEL[task.diff])}（贡献 +${reward}）`);
+    });
+    io.print(' 0) 返回');
+    const ch = await io.ask('选择任务：', TASKS.map((_, i) => String(i + 1)), '1');
+    if (ch === '0' || ch === '') return false;
+    const idx = parseInt(ch, 10);
+    if (isNaN(idx) || idx < 1 || idx > TASKS.length) {
+      io.print(red('无效编号。'));
+      continue;
+    }
+    const task = TASKS[idx - 1];
+    const reward = taskReward(task.reward, p.realmIdx);
 
-  if (task.kind === 'combat') {
-    const r = await combat(p, state.leads, io, task.intro);
-    if (r === 'win') {
-      p.sectContribution += task.reward;
-      await io.narrate(green(`任务完成，贡献 +${task.reward}。`));
-    } else {
-      p.sectContribution += Math.max(1, Math.floor(task.reward / 5));
-      await io.narrate(yellow('任务失利，只得少许苦劳。'));
+    if (task.kind === 'combat') {
+      const r = await combat(p, state.leads, io, task.intro, task.boost ?? 0);
+      if (r === 'win') {
+        p.sectContribution += reward;
+        await io.narrate(green(`任务完成，贡献 +${reward}。`));
+      } else {
+        p.sectContribution += Math.max(1, Math.floor(reward / 5));
+        await io.narrate(yellow('任务失利，只得少许苦劳。'));
+      }
+      return true;
+    }
+    if (task.kind === 'collect') {
+      const m = task.material!;
+      if ((p.materials[m] ?? 0) < (task.matN ?? 1)) {
+        io.print(red(`材料不足（需 ${m}×${task.matN}，当前 ${p.materials[m] ?? 0}）。`));
+        continue;
+      }
+      p.materials[m] -= task.matN!;
+      p.sectContribution += reward;
+      io.print(green(`上交 ${m}×${task.matN}，贡献 +${reward}。`));
+      return true;
+    }
+    if (task.kind === 'craft') {
+      const pill = task.pill!;
+      if ((p.pills[pill] ?? 0) < 1) {
+        io.print(red(`你没有 ${pill}。`));
+        continue;
+      }
+      p.pills[pill] -= 1;
+      p.sectContribution += reward;
+      io.print(green(`上交 ${pill}×1，贡献 +${reward}。`));
+      return true;
+    }
+    // 巡逻
+    await io.narrate('你巡守宗门属地一年，赶走了几只不开眼的小妖。');
+    p.sectContribution += reward;
+    if (chance(0.4)) {
+      const n = randint(20, 60);
+      p.spirit += n;
+      io.print(green(`巡逻途中顺手采得些灵物，卖得 ${n} 灵石。`));
     }
     return true;
   }
-  if (task.kind === 'collect') {
-    const m = task.material!;
-    if ((p.materials[m] ?? 0) < (task.matN ?? 1)) {
-      io.print(red(`材料不足（需 ${m}×${task.matN}）。`));
-      return false;
-    }
-    p.materials[m] -= task.matN!;
-    p.sectContribution += task.reward;
-    io.print(green(`上交 ${m}×${task.matN}，贡献 +${task.reward}。`));
-    return true;
-  }
-  if (task.kind === 'craft') {
-    const pill = task.pill!;
-    if ((p.pills[pill] ?? 0) < 1) {
-      io.print(red(`你没有 ${pill}。`));
-      return false;
-    }
-    p.pills[pill] -= 1;
-    p.sectContribution += task.reward;
-    io.print(green(`上交 ${pill}×1，贡献 +${task.reward}。`));
-    return true;
-  }
-  // 巡逻
-  await io.narrate('你巡守宗门属地一年，赶走了几只不开眼的小妖。');
-  p.sectContribution += task.reward;
-  if (chance(0.4)) {
-    const n = randint(20, 60);
-    p.spirit += n;
-    io.print(green(`巡逻途中顺手采得些灵物，卖得 ${n} 灵石。`));
-  }
-  return true;
 }
 
 /** 捐献灵石换贡献（不消耗时间）。 */
