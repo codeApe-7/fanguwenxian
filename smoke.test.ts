@@ -328,6 +328,7 @@ async function main() {
   console.log('· 双修（道侣专属）');
   const dP = createPlayer('测试', ORIGINS[0], SECTS[0]);
   const dLead = makeLead(dP);
+  dLead.realmIdx = dP.realmIdx; // 同境界，双修收益为基准 16
   dLead.dao = true;
   dLead.favor = 50;
   const dState: GameState = { player: dP, leads: [dLead] };
@@ -392,6 +393,16 @@ async function main() {
   assert(lead.name.length >= 2, '女主姓名合法');
   assert(leadDescription(lead).includes(lead.name), '女主描述包含姓名');
 
+  console.log('· 女主境界可高于主角');
+  const hiP = createPlayer('测试', ORIGINS[0], SECTS[0]); // 炼气期
+  let sawHigher = false;
+  for (let i = 0; i < 200; i++) {
+    const l = makeLead(hiP);
+    assert(l.realmIdx >= 0 && l.realmIdx <= REALMS.length - 1, '女主境界不越界（可至渡劫）');
+    if (l.realmIdx > hiP.realmIdx) sawHigher = true;
+  }
+  assert(sawHigher, '女主境界可高于主角');
+
   console.log('· 红颜修为成长');
   const growLead = makeLead(p);
   const growLeads: FemaleLead[] = [growLead];
@@ -400,7 +411,12 @@ async function main() {
     growLead.realm === REALMS[growLead.realmIdx].name + REALMS[growLead.realmIdx].stages[growLead.stageIdx],
     '红颜境界字符串与下标一致',
   );
-  assert(growLead.realmIdx <= REALMS.length - 2, '红颜境界不越界');
+  assert(growLead.realmIdx <= REALMS.length - 1, '红颜境界不越界（可至渡劫）');
+  const capLead = makeLead(p);
+  capLead.realmIdx = 3;
+  const capLeads: FemaleLead[] = [capLead];
+  for (let i = 0; i < 500; i++) advanceLeads(capLeads, 3);
+  assert(capLead.realmIdx <= 5, '红颜最多领先主角两阶（封顶 +2）');
 
   console.log('· 渡劫飞升（有渡劫丹与道侣共渡必成功）');
   p.realmIdx = REALMS.length - 1;

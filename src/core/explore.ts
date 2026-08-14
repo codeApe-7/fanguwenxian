@@ -23,9 +23,10 @@ const PURSUIT_EVENT: ExploreEvent = {
 export async function explore(state: GameState, io: GameIO): Promise<void> {
   const p = state.player;
 
-  // 邂逅新女主（散修机缘更高）
+  // 邂逅新女主（散修机缘更高；已有红颜越多，越难再遇新）
   const eb = sectOf(p)?.exploreBonus ?? 0;
-  const meetChance = 0.25 + (eb > 0 ? eb * sectPower(p) : eb);
+  const base = 0.2 + (eb > 0 ? eb * sectPower(p) : eb);
+  const meetChance = base * (1 - state.leads.length * 0.15);
   if (chance(meetChance) && state.leads.length < 5) {
     const lead = makeLead(p);
     state.leads.push(lead);

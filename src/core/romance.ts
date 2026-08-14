@@ -11,15 +11,28 @@ function modsOf(l: FemaleLead) {
   return PERSONALITY_MODS[l.personality] ?? { name: l.personality, talk: 1, debate: 1, gift: 1 };
 }
 
-/** 红颜随时间成长修为（每年结算，成长慢于主角，不超过主角当前大境界）。 */
+/** 境界差对好感的修正：红颜高于主角更难打动（每高一阶 ×0.85），低于则略易。 */
+function realmGapMult(p: Player, l: FemaleLead): number {
+  const gap = l.realmIdx - p.realmIdx;
+  if (gap > 0) return Math.pow(0.85, gap);
+  if (gap < 0) return Math.pow(1.1, -gap);
+  return 1;
+}
+
+/** 红颜相对主角高出的境界数（用于论道/双修额外收益）。 */
+function realmLead(l: FemaleLead, p: Player): number {
+  return Math.max(0, l.realmIdx - p.realmIdx);
+}
+
+/** 红颜随时间成长修为（每年结算，最多领先主角两个大境界，可至渡劫）。 */
 export function advanceLeads(leads: FemaleLead[], playerRealm: number): void {
   for (const l of leads) {
-    if (l.realmIdx >= playerRealm) continue; // 不超越主角
+    if (l.realmIdx >= playerRealm + 2) continue; // 最多领先主角两阶
     if (!chance(0.2)) continue;
     const realm = REALMS[l.realmIdx];
     if (l.stageIdx < realm.stages.length - 1) {
       l.stageIdx += 1;
-    } else if (l.realmIdx < REALMS.length - 2) {
+    } else if (l.realmIdx < REALMS.length - 1) {
       l.realmIdx += 1;
       l.stageIdx = 0;
     } else {
@@ -70,7 +83,7 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<void>
     const ch = await io.ask('选择：');
     if (ch === '0' || ch === '') return;
     if (ch === '1') {
-      const g = Math.max(1, Math.round(randint(3, 8) * modsOf(lead).talk));
+      const g = Math.max(1, Math.round(randint(3, 8) * modsOf(lead).talk * realmGapMult(p, lead)));
       lead.favor = Math.min(100, lead.favor + g);
       io.print(green(`你与 ${lead.name} 相谈甚欢，好感 +${g}。`));
     } else if (ch === '2') {
@@ -79,11 +92,12 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<void>
         await io.pause();
         continue;
       }
-      const g = Math.max(1, Math.round(randint(5, 12) * modsOf(lead).debate));
+      const g = Math.max(1, Math.round(randint(5, 12) * modsOf(lead).debate * realmGapMult(p, lead)));
+      const cult = 8 + realmLead(lead, p) * 4;
       lead.favor = Math.min(100, lead.favor + g);
-      p.cultivation = Math.min(100, p.cultivation + 8);
+      p.cultivation = Math.min(100, p.cultivation + cult);
       p.heart = Math.min(100, p.heart + 3);
-      io.print(green(`你与 ${lead.name} 论道半日，好感 +${g}，修为 +8。`));
+      io.print(green(`你与 ${lead.name} 论道半日，好感 +${g}，修为 +${cult}。`));
     } else if (ch === '3') {
       await giftLead(p, lead, io);
     } else if (ch === '4') {
@@ -117,7 +131,7 @@ async function giftLead(p: Player, lead: FemaleLead, io: GameIO): Promise<void> 
     }
     p.pills[pill] -= 1;
   }
-  const gain = Math.max(1, Math.round(gains[ch] * modsOf(lead).gift));
+  const gain = Math.max(1, Math.round(gains[ch] * modsOf(lead).gift * realmGapMult(p, lead)));
   lead.favor = Math.min(100, lead.favor + gain);
   io.print(green(`${lead.name} 收下礼物，好感 +${gain}。`));
 }
@@ -127,8 +141,9 @@ async function makeDaoCompanion(p: Player, lead: FemaleLead, io: GameIO): Promis
     io.print(yellow('她已经是你的道侣了。'));
     return;
   }
-  if (lead.favor < 80) {
-    io.print(red('你们的情意尚浅，还不到结为道侣的时候。'));
+  const need = Math.min(100, 80 + realmLead(lead, p) * 10); // 红颜境界越高，所需好感越高
+  if (lead.favor < need) {
+    io.print(red(`还不到结为道侣的时候（好感需 ≥${need}，当前 ${lead.favor}）。`));
     return;
   }
   lead.dao = true;
@@ -141,7 +156,7 @@ async function makeDaoCompanion(p: Player, lead: FemaleLead, io: GameIO): Promis
 /** 双修（道侣专属）：修为收益为论道两倍（16），合欢宗等双修宗门再加成。 */
 async function dualCultivate(p: Player, lead: FemaleLead, io: GameIO): Promise<void> {
   const dual = sectOf(p)?.dualBonus ?? 0; // 合欢宗双修加成 +50%
-  const gain = Math.round(16 * (1 + dual));
+  const gain = Math.round((16 + realmLead(lead, p) * 6) * (1 + dual)); // 红颜境界越高收益越大
   const favor = randint(5, 10);
   lead.favor = Math.min(100, lead.favor + favor);
   p.cultivation = Math.min(100, p.cultivation + gain);

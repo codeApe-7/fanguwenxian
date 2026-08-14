@@ -65,11 +65,11 @@ export function createPlayer(name: string, origin: OriginDef, sect: SectDef): Pl
   return p;
 }
 
-/** 随机生成一位女主，修为大致围绕玩家境界。 */
+/** 随机生成一位女主，修为围绕玩家境界、可高于主角（前辈/师姐）。 */
 export function makeLead(player: Player): FemaleLead {
   const name = pick(SURNAMES) + pick(FEMALE_GIVEN);
-  const offset = pick([-1, 0, 0, 1]);
-  const idx = Math.max(0, Math.min(REALMS.length - 2, player.realmIdx + offset));
+  const offset = pick([-1, 0, 0, 1, 1, 2]); // 可高主角两阶，少数低一阶
+  const idx = Math.max(0, Math.min(REALMS.length - 1, player.realmIdx + offset));
   const stageIdx = randint(0, REALMS[idx].stages.length - 1);
   const realm = REALMS[idx].name + REALMS[idx].stages[stageIdx];
   return {
