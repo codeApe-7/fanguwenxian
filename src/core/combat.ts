@@ -2,7 +2,7 @@
 
 import type { GameIO } from '../io.js';
 import type { Player, FemaleLead } from '../types.js';
-import { ENEMY_POOL, TREASURES, MATERIALS, TALISMANS, TECHNIQUES, SPELLS, realmAbs, sectOf, playerAttack, playerDefense, playerHp } from '../content.js';
+import { ENEMY_POOL, TREASURES, MATERIALS, TALISMANS, TECHNIQUES, SPELLS, realmAbs, sectOf, playerAttack, playerDefense, playerHp, incomeScale } from '../content.js';
 import { green, red, yellow, cyan, dim } from '../colors.js';
 import { pick, randint, chance } from './rng.js';
 
@@ -24,7 +24,7 @@ export function makeEnemy(p: Player, boost = 0): Enemy {
     hp: 30 + level * 18,
     atk: 6 + level * 4,
     def: 2 + level * 2,
-    loot: randint(10, 40) * (level + 1),
+    loot: randint(20, 60) * incomeScale(p.realmIdx),
   };
 }
 
@@ -44,7 +44,6 @@ export async function combat(
 
   let php = playerHp(p);
   let ehp = enemy.hp;
-  let uses = 3;
   let turn = 1;
   let buffAtk = 0;   // 本场战斗攻击增益
   let stunTurns = 0; // 敌人被定身回合数
@@ -58,28 +57,26 @@ export async function combat(
     io.print(dim(`—— 第 ${turn} 回合 ——`));
     io.print(`你：气血 ${php}/${playerHp(p)}    敌人 ${enemy.name}：气血 ${Math.max(0, ehp)}`);
     const hasSpell = (p.spells ?? []).length > 0;
-    const prompt = `选择行动：1)攻击 2)法宝 3)疗伤 4)符箓 5)逃跑${hasSpell ? ' 6)神通' : ''}`;
-    const choices = hasSpell ? ['1', '2', '3', '4', '5', '6'] : ['1', '2', '3', '4', '5'];
-    const choice = await io.ask(prompt, choices, '1');
+    // 施法为主输出（置顶），普通攻击为兜底；Enter 默认落在普通攻击上，保证兜底不卡死
+    const actions: Array<{ key: string; label: string }> = [];
+    if (hasSpell) actions.push({ key: 'spell', label: '施法' });
+    actions.push({ key: 'attack', label: '普通攻击' });
+    actions.push({ key: 'heal', label: '疗伤' });
+    actions.push({ key: 'talisman', label: '符箓' });
+    actions.push({ key: 'escape', label: '逃跑' });
+    const prompt = '选择行动：' + actions.map((a, i) => `${i + 1})${a.label}`).join(' ');
+    const choices = actions.map((_, i) => String(i + 1));
+    const defChoice = String(actions.findIndex((a) => a.key === 'attack') + 1);
+    const choice = await io.ask(prompt, choices, defChoice);
+    const idx = parseInt(choice, 10);
+    if (isNaN(idx) || idx < 1 || idx > actions.length) continue;
+    const action = actions[idx - 1].key;
 
-    if (choice === '1') {
-      const dmg = Math.max(1, playerAttack(p) + buffAtk - enemy.def + randint(-3, 3));
+    if (action === 'attack') {
+      const dmg = Math.max(1, Math.round(playerAttack(p) * 0.6) + buffAtk - enemy.def + randint(-2, 2));
       ehp -= dmg;
-      io.print(`你催动法术，造成 ${green(String(dmg))} 点伤害！`);
-    } else if (choice === '2') {
-      if (uses <= 0) {
-        io.print(red('法宝灵力耗尽，此战无法再催动。'));
-        continue;
-      }
-      if (p.treasure === '无') {
-        io.print(red('你还没有法宝。'));
-        continue;
-      }
-      uses -= 1;
-      const dmg = Math.max(1, playerAttack(p) + TREASURES[p.treasure][0] - enemy.def);
-      ehp -= dmg;
-      io.print(`你祭出 ${cyan(p.treasure)}，重创敌人 ${green(String(dmg))} 点！`);
-    } else if (choice === '3') {
+      io.print(`你凝神一击，造成 ${green(String(dmg))} 点伤害！`);
+    } else if (action === 'heal') {
       if ((p.pills['疗伤丹'] ?? 0) > 0) {
         p.pills['疗伤丹'] -= 1;
         php = Math.min(playerHp(p), php + 40);
@@ -92,7 +89,7 @@ export async function combat(
         io.print(red('你没有疗伤丹药。'));
         continue;
       }
-    } else if (choice === '4') {
+    } else if (action === 'talisman') {
       if ((p.talismans['烈焰符'] ?? 0) > 0) {
         p.talismans['烈焰符'] -= 1;
         const dmg = TALISMANS['烈焰符'].value;
@@ -107,7 +104,7 @@ export async function combat(
         io.print(red('你没有符箓。'));
         continue;
       }
-    } else if (choice === '6') {
+    } else if (action === 'spell') {
       const avail = (p.spells ?? []).filter((s) => (spellLeft.get(s) ?? 0) > 0);
       if (avail.length === 0) {
         io.print(red('你尚未修习神通（或已用尽）。'));
@@ -125,12 +122,13 @@ export async function combat(
       const spell = SPELLS[sname];
       spellLeft.set(sname, (spellLeft.get(sname) ?? 0) - 1);
       if (spell.type === 'atk') {
-        const dmg = Math.max(1, spell.value + realmAbs(p) * 2);
+        const dmg = Math.max(1, spell.value + Math.round(playerAttack(p) * 0.9) - enemy.def + randint(-2, 2));
         ehp -= dmg;
         io.print(`你施展 ${cyan(spell.name)}，造成 ${green(String(dmg))} 点伤害！`);
       } else if (spell.type === 'heal') {
-        php = Math.min(playerHp(p), php + spell.value);
-        io.print(green(`你施展 ${spell.name}，恢复 ${spell.value} 点气血。`));
+        const heal = spell.value + realmAbs(p) * 2;
+        php = Math.min(playerHp(p), php + heal);
+        io.print(green(`你施展 ${spell.name}，恢复 ${heal} 点气血。`));
       } else if (spell.type === 'buff') {
         buffAtk += spell.value;
         io.print(green(`你施展 ${spell.name}，本场战斗攻击 +${spell.value}。`));
@@ -190,13 +188,14 @@ export async function combat(
   }
   if (chance(0.35)) {
     const mat = pick(Object.keys(MATERIALS));
-    p.materials[mat] = (p.materials[mat] ?? 0) + 1;
-    io.print(`并获得 ${cyan(mat)}×1。`);
+    const qty = 1 + Math.floor(p.realmIdx / 2); // 材料产出随境界适度放大
+    p.materials[mat] = (p.materials[mat] ?? 0) + qty;
+    io.print(`并获得 ${cyan(mat)}×${qty}。`);
   }
   if (chance(0.12)) {
     const t = pick(Object.keys(TREASURES));
-    const curAtk = TREASURES[p.treasure]?.[0] ?? 0;
-    if (TREASURES[t][0] > curAtk) {
+    const curAtk = TREASURES[p.treasure]?.atk ?? 0;
+    if (TREASURES[t].atk > curAtk) {
       p.treasure = t;
       io.print(`缴获法宝 ${cyan(t)}！`);
     } else {

@@ -90,7 +90,7 @@ async function shopTreasures(p: Player, io: GameIO): Promise<void> {
   const items = Object.entries(TREASURES);
   while (true) {
     io.print(cyan('—— 法宝 ——'));
-    items.forEach(([name, [atk, price]], i) => io.print(` ${i + 1}) ${name}（攻击+${atk}，${price} 灵石）`));
+    items.forEach(([name, def], i) => io.print(` ${i + 1}) ${name}（攻+${def.atk} 防+${def.def}，${def.price} 灵石）`));
     io.print(` 0) 返回    灵石：${p.spirit}`);
     const ch = await io.ask('购买编号：');
     if (ch === '0' || ch === '') return;
@@ -99,12 +99,12 @@ async function shopTreasures(p: Player, io: GameIO): Promise<void> {
       io.print(red('无效编号。'));
       continue;
     }
-    const [name, [, price]] = items[idx - 1];
-    if (p.spirit < price) {
+    const [name, def] = items[idx - 1];
+    if (p.spirit < def.price) {
       io.print(red('灵石不足。'));
       continue;
     }
-    p.spirit -= price;
+    p.spirit -= def.price;
     p.treasure = name;
     io.print(green(`购得法宝 ${name}！`));
   }

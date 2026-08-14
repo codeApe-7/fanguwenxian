@@ -43,6 +43,7 @@ export const ROOTS: RootDef[] = [
 export interface TechniqueDef {
   mult: number;      // 修炼倍率
   atk?: number;      // 攻击加成（主修时生效）
+  def?: number;      // 防御加成（主修时生效）
   hp?: number;       // 气血加成（主修时生效）
   lifespan?: number; // 初次修习寿元 +N（一次性）
   sect?: string;     // 镇宗功法：仅该宗门藏经阁可兑换
@@ -60,30 +61,30 @@ export const TECHNIQUES: Record<string, TechniqueDef> = {
   九转玄元功: { mult: 2.5, spells: ['五雷轰顶'], desc: '九转轮回，玄元不息。' },
   太上忘尘经: { mult: 3.0, spells: ['摄魂术'], desc: '太上忘情，尘缘尽断。' },
   // —— 通用炼体 / 养寿 / 攻伐（凡品，坊市有售） ——
-  金刚淬体功: { mult: 1.1, hp: 25, spells: ['金刚罩'], desc: '炼体功法，铜皮铁骨。' },
-  铁骨功: { mult: 1.1, hp: 30, spells: ['战意诀'], desc: '锻骨如铁，气血悠长。' },
+  金刚淬体功: { mult: 1.1, hp: 25, def: 8, spells: ['金刚罩'], desc: '炼体功法，铜皮铁骨。' },
+  铁骨功: { mult: 1.1, hp: 30, def: 10, spells: ['战意诀'], desc: '锻骨如铁，气血悠长。' },
   龟息诀: { mult: 1.0, lifespan: 15, spells: ['敛息术'], desc: '龟息吐纳，延年益寿。' },
   养生诀: { mult: 1.1, lifespan: 10, spells: ['甘霖咒'], desc: '调和阴阳，颐养天年。' },
   御风诀: { mult: 1.2, atk: 5, spells: ['疾风斩', '土遁术'], desc: '身法御风，疾如流影。' },
   烈阳掌: { mult: 1.2, atk: 8, spells: ['火球术'], desc: '至阳掌力，焚金裂石。' },
   玄冥劲: { mult: 1.2, atk: 8, spells: ['冰封千里'], desc: '阴寒劲力，透骨伤髓。' },
   狂雷劲: { mult: 1.25, atk: 10, spells: ['掌心雷'], desc: '雷霆劲力，刚猛无俦。' },
-  磐石功: { mult: 1.1, hp: 35, spells: ['金刚罩'], desc: '立如磐石，稳若泰山。' },
-  洗髓经: { mult: 1.3, hp: 10, spells: ['回春术'], desc: '洗髓伐骨，脱胎换骨。' },
-  玄龟甲功: { mult: 1.05, hp: 40, spells: ['金刚罩'], desc: '玄龟负甲，刀枪难入。' },
+  磐石功: { mult: 1.1, hp: 35, def: 12, spells: ['金刚罩'], desc: '立如磐石，稳若泰山。' },
+  洗髓经: { mult: 1.3, hp: 10, def: 4, spells: ['回春术'], desc: '洗髓伐骨，脱胎换骨。' },
+  玄龟甲功: { mult: 1.05, hp: 40, def: 15, spells: ['金刚罩'], desc: '玄龟负甲，刀枪难入。' },
   延寿经: { mult: 1.0, lifespan: 20, spells: ['甘霖咒'], desc: '静心延寿，颐养天年。' },
   回春功: { mult: 1.2, lifespan: 8, hp: 5, spells: ['枯木逢春'], desc: '枯木回春，气血渐旺。' },
   青囊诀: { mult: 1.15, lifespan: 12, spells: ['回春术'], desc: '青囊妙法，济世养身。' },
   凝神诀: { mult: 1.35, spells: ['定身术'], desc: '凝神静气，事半功倍。' },
-  五禽戏: { mult: 1.15, hp: 8, lifespan: 5, spells: ['战意诀'], desc: '五禽之戏，强身健骨。' },
+  五禽戏: { mult: 1.15, hp: 8, lifespan: 5, def: 3, spells: ['战意诀'], desc: '五禽之戏，强身健骨。' },
   // —— 镇宗功法（灵品，各宗门藏经阁专属） ——
   青霄剑诀: { mult: 1.4, atk: 20, sect: '太乙剑宗', tier: 2, spells: ['御剑术', '剑气纵横'], desc: '剑意冲霄，无坚不摧。' },
   太清玉册: { mult: 1.6, sect: '玄清门', tier: 2, spells: ['掌心雷', '定身术'], desc: '太清正法，中正平和。' },
   阴阳和合功: { mult: 1.5, hp: 15, sect: '合欢宗', tier: 2, spells: ['甘霖咒'], desc: '阴阳相济，神完气足。' },
   血煞魔功: { mult: 1.9, atk: 12, sect: '血煞魔宗', tier: 2, spells: ['血祭大法'], desc: '血煞入体，杀伐速成。' },
-  金刚降魔功: { mult: 1.5, hp: 25, sect: '净禅寺', tier: 2, spells: ['金刚罩', '困神术'], desc: '金刚怒目，降魔护体。' },
+  金刚降魔功: { mult: 1.5, hp: 25, def: 10, sect: '净禅寺', tier: 2, spells: ['金刚罩', '困神术'], desc: '金刚怒目，降魔护体。' },
   青木养气诀: { mult: 1.3, lifespan: 15, sect: '丹霞谷', tier: 2, spells: ['枯木逢春'], desc: '青木药气，养寿延年。' },
-  九炼玄体功: { mult: 1.3, hp: 20, sect: '天工坊', tier: 2, spells: ['战意诀'], desc: '九炼淬体，器修根基。' },
+  九炼玄体功: { mult: 1.3, hp: 20, def: 8, sect: '天工坊', tier: 2, spells: ['战意诀'], desc: '九炼淬体，器修根基。' },
   符胆真经: { mult: 1.4, atk: 8, sect: '万符门', tier: 2, spells: ['困神术'], desc: '符胆藏神，一笔御敌。' },
   星罗阵诀: { mult: 1.5, hp: 10, sect: '太虚阵宗', tier: 2, spells: ['困神术'], desc: '星罗棋布，借阵护身。' },
   // —— 五行流派（灵品，坊市/藏经阁有售） ——
@@ -91,7 +92,7 @@ export const TECHNIQUES: Record<string, TechniqueDef> = {
   乙木经: { mult: 1.25, hp: 10, tier: 2, spells: ['回春术'], desc: '木行功法，生机绵长。' },
   离火诀: { mult: 1.25, atk: 8, tier: 2, spells: ['烈焰焚天'], desc: '火行功法，烈焰灼灼。' },
   碧波心法: { mult: 1.25, hp: 8, tier: 2, spells: ['甘霖咒'], desc: '水行功法，润泽万物。' },
-  厚土功: { mult: 1.25, hp: 12, tier: 2, spells: ['金刚罩'], desc: '土行功法，厚重如山。' },
+  厚土功: { mult: 1.25, hp: 12, def: 6, tier: 2, spells: ['金刚罩'], desc: '土行功法，厚重如山。' },
   // —— 冷门流派（灵品，坊市/藏经阁有售） ——
   清音诀: { mult: 1.3, hp: 5, tier: 2, spells: ['天音破'], desc: '音修功法，余音绕梁。' },
   天籁真经: { mult: 1.5, hp: 15, tier: 2, spells: ['天音破'], desc: '天籁之音，震人心魄。' },
@@ -105,9 +106,9 @@ export const TECHNIQUES: Record<string, TechniqueDef> = {
   太阴炼神诀: { mult: 1.4, tier: 2, spells: ['摄魂术'], desc: '太阴炼神，神识大增。' },
   // —— 仙品（不售，仅残篇/奇遇可得） ——
   太虚引星诀: { mult: 2.8, atk: 15, tier: 3, spells: ['万剑归宗'], desc: '引星辰之力，无坚不摧。' },
-  混沌归元功: { mult: 2.6, hp: 30, tier: 3, spells: ['枯木逢春'], desc: '混沌归元，生生不息。' },
+  混沌归元功: { mult: 2.6, hp: 30, def: 12, tier: 3, spells: ['枯木逢春'], desc: '混沌归元，生生不息。' },
   造化长生经: { mult: 2.2, lifespan: 30, tier: 3, spells: ['甘霖咒'], desc: '造化加身，长生可期。' },
-  混元一气功: { mult: 2.4, atk: 10, hp: 20, tier: 3, spells: ['五雷轰顶'], desc: '混元一气，天地同力。' },
+  混元一气功: { mult: 2.4, atk: 10, hp: 20, def: 6, tier: 3, spells: ['五雷轰顶'], desc: '混元一气，天地同力。' },
   无上剑经: { mult: 2.3, atk: 25, tier: 3, spells: ['万剑归宗'], desc: '无上剑道，一剑破万法。' },
 };
 
@@ -269,6 +270,13 @@ export const MATERIALS: Record<string, number> = {
   灵石精: 200,
 };
 
+// ---- 收入随境界等比缩放（锚定突破丹价格，使「打赢 ~5 场 ≈ 一颗突破丹」恒定） ----
+export const INCOME_SCALE = [1, 3, 8, 20, 40, 75, 125, 250, 250]; // 按 realmIdx
+
+export function incomeScale(realmIdx: number): number {
+  return INCOME_SCALE[Math.min(realmIdx, INCOME_SCALE.length - 1)] ?? 1;
+}
+
 // ---- 炼丹配方（成品 -> {材料 -> 数量}） ----
 export const RECIPES: Record<string, Record<string, number>> = {
   凝气丹: { 灵草: 2 },
@@ -281,14 +289,20 @@ export const RECIPES: Record<string, Record<string, number>> = {
   婴变丹: { 妖兽内丹: 4, 灵石精: 2 },
 };
 
-// ---- 法宝（名称 -> [攻击加成, 价格]） ----
-export const TREASURES: Record<string, [number, number]> = {
-  松纹剑: [5, 120],
-  赤鳞刀: [10, 350],
-  寒玉剑: [18, 900],
-  惊雷鞭: [30, 2500],
-  云海扇: [50, 7000],
-  太虚剑: [90, 25000],
+// ---- 法宝（名称 -> 属性与价格，纯装备：被动加攻/防） ----
+export interface TreasureDef {
+  atk: number;   // 攻击加成
+  def: number;   // 防御加成
+  price: number; // 售价
+}
+
+export const TREASURES: Record<string, TreasureDef> = {
+  松纹剑: { atk: 5, def: 1, price: 120 },
+  赤鳞刀: { atk: 10, def: 2, price: 350 },
+  寒玉剑: { atk: 18, def: 3, price: 900 },
+  惊雷鞭: { atk: 30, def: 5, price: 2500 },
+  云海扇: { atk: 50, def: 8, price: 7000 },
+  太虚剑: { atk: 90, def: 15, price: 25000 },
 };
 
 // ---- 四艺副业技能名（需机缘解锁） ----
@@ -838,7 +852,7 @@ export function playerTitle(p: Player): string {
 }
 
 export function playerAttack(p: Player): number {
-  const treasureAtk = TREASURES[p.treasure]?.[0] ?? 0;
+  const treasureAtk = TREASURES[p.treasure]?.atk ?? 0;
   const formAtk = FORMATIONS[p.formation]?.atk ?? 0;
   const techAtk = Math.round((TECHNIQUES[p.technique]?.atk ?? 0) * techPower(p)); // 功法攻击加成，随熟练度放大
   let atk = 8 + realmAbs(p) * 5 + treasureAtk + formAtk + techAtk;
@@ -848,8 +862,10 @@ export function playerAttack(p: Player): number {
 }
 
 export function playerDefense(p: Player): number {
+  const treasureDef = TREASURES[p.treasure]?.def ?? 0;
   const formDef = FORMATIONS[p.formation]?.def ?? 0;
-  return 3 + realmAbs(p) * 2 + formDef;
+  const techDef = Math.round((TECHNIQUES[p.technique]?.def ?? 0) * techPower(p)); // 功法防御加成，随熟练度放大
+  return 3 + realmAbs(p) * 2 + treasureDef + formDef + techDef;
 }
 
 export function playerHp(p: Player): number {

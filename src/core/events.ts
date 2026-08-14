@@ -3,7 +3,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { MATERIALS, TREASURES, TECHNIQUES, REALMS, ROOTS, sectOf, sectPower, upgradeTechnique, playerTitle } from '../content.js';
+import { MATERIALS, TREASURES, TECHNIQUES, REALMS, ROOTS, sectOf, sectPower, upgradeTechnique, playerTitle, incomeScale } from '../content.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick, chance, randint } from './rng.js';
 import { makeLead } from './character.js';
@@ -21,7 +21,7 @@ export interface ExploreEvent {
 // ---- 数值辅助（纯函数） ----
 
 function addSpirit(p: Player, n: number): void {
-  p.spirit += n;
+  p.spirit += Math.round(n * incomeScale(p.realmIdx)); // 灵石收益随境界等比放大
 }
 
 function loseSpirit(p: Player, n: number): void {
@@ -29,7 +29,7 @@ function loseSpirit(p: Player, n: number): void {
 }
 
 function addMat(p: Player, name: string, n = 1): void {
-  p.materials[name] = (p.materials[name] ?? 0) + n;
+  p.materials[name] = (p.materials[name] ?? 0) + n * (1 + Math.floor(p.realmIdx / 2)); // 材料产出随境界适度放大
 }
 
 function addCult(p: Player, n: number): void {
@@ -72,8 +72,8 @@ function upgradeRoot(p: Player): string | null {
 
 /** 法宝提升一档，返回新法宝名（已最强则 null）。 */
 function upgradeTreasure(p: Player): string | null {
-  const curAtk = TREASURES[p.treasure]?.[0] ?? 0;
-  const better = Object.keys(TREASURES).filter((t) => TREASURES[t][0] > curAtk);
+  const curAtk = TREASURES[p.treasure]?.atk ?? 0;
+  const better = Object.keys(TREASURES).filter((t) => TREASURES[t].atk > curAtk);
   if (better.length === 0) return null;
   const t = pick(better);
   p.treasure = t;
@@ -485,14 +485,14 @@ export const EVENTS: ExploreEvent[] = [
   {
     name: '拍卖会', weight: 2,
     run: async (p, _s, io) => {
-      const curAtk = TREASURES[p.treasure]?.[0] ?? 0;
-      const better = Object.keys(TREASURES).filter((k) => TREASURES[k][0] > curAtk);
+      const curAtk = TREASURES[p.treasure]?.atk ?? 0;
+      const better = Object.keys(TREASURES).filter((k) => TREASURES[k].atk > curAtk);
       if (better.length === 0) {
         await io.narrate(dim('【游历·拍卖会】一场拍卖正在进行，可惜没有入你法眼之物。'));
         return;
       }
       const t = pick(better);
-      const price = Math.floor(TREASURES[t][1] * 0.8);
+      const price = Math.floor(TREASURES[t].price * 0.8);
       await io.narrate(`【游历·拍卖会】拍卖行正竞价一件 ${cyan(t)}，起拍 ${price} 灵石。`);
       if (p.spirit < price) {
         await io.narrate(dim('你灵石不足，只得作罢。'));

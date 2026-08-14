@@ -3,7 +3,7 @@
 
 import type { GameIO } from './src/io.js';
 import type { GameState, FemaleLead } from './src/types.js';
-import { ORIGINS, SECTS, REALMS, SCENARIOS, GOLDEN_FINGERS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerTitle, techniqueSummary, upgradeTechnique } from './src/content.js';
+import { ORIGINS, SECTS, REALMS, SCENARIOS, GOLDEN_FINGERS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, TREASURES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, techniqueSummary, upgradeTechnique } from './src/content.js';
 import { createPlayer, rollRoot, makeLead } from './src/core/character.js';
 import { createCharacter } from './src/core/engine.js';
 import { maybeTriggerStory } from './src/core/storyline.js';
@@ -278,9 +278,20 @@ async function main() {
   console.log('· 战斗神通');
   const cspellP = createPlayer('测试', ORIGINS[0], SECTS[0]);
   learnTechnique(cspellP, '青灵诀');
-  io.queue = ['6', '1']; // 选神通 → 施展第 1 个（回春术）
+  io.queue = ['1', '1']; // 施法（主输出）→ 施展第 1 个（回春术）
   const spResult = await combat(cspellP, [], io);
   assert(['win', 'lose', 'escape'].includes(spResult), '战斗神通不报错');
+
+  console.log('· 法宝装备化与功法防御');
+  const eqP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  const defBase = playerDefense(eqP);
+  eqP.treasure = '太虚剑';
+  assert(playerDefense(eqP) > defBase, '法宝提供防御加成');
+  eqP.treasure = '无';
+  learnTechnique(eqP, '玄龟甲功');
+  switchTechnique(eqP, '玄龟甲功');
+  assert(playerDefense(eqP) > defBase, '功法提供防御加成');
+  assert(TREASURES['太虚剑'].atk === 90 && TREASURES['太虚剑'].def === 15, '法宝属性含攻防');
 
   console.log('· 突破（多次，检查境界下标不越界）');
   for (let i = 0; i < 10; i++) {

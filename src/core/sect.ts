@@ -2,7 +2,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { SECTS, REALMS, TECHNIQUES, PILLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, SECT_RANK_REALM, learnTechnique, upgradeTechnique, techniqueSummary, playerTitle } from '../content.js';
+import { SECTS, REALMS, TECHNIQUES, PILLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, SECT_RANK_REALM, learnTechnique, upgradeTechnique, techniqueSummary, playerTitle, incomeScale } from '../content.js';
 import type { SectDef } from '../content.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick, chance, randint } from './rng.js';
@@ -119,7 +119,7 @@ async function takeTask(state: GameState, io: GameIO): Promise<boolean> {
     await io.narrate('你巡守宗门属地一年，赶走了几只不开眼的小妖。');
     p.sectContribution += reward;
     if (chance(0.4)) {
-      const n = randint(20, 60);
+      const n = randint(20, 60) * incomeScale(p.realmIdx);
       p.spirit += n;
       io.print(green(`巡逻途中顺手采得些灵物，卖得 ${n} 灵石。`));
     }
@@ -341,16 +341,16 @@ async function tourney(state: GameState, io: GameIO): Promise<boolean> {
   }
   if (wins === 3) {
     p.sectContribution += 100;
-    p.spirit += 300;
+    p.spirit += 300 * incomeScale(p.realmIdx);
     p.materials['灵石精'] = (p.materials['灵石精'] ?? 0) + 1;
     await io.narrate(green('三战全胜！你力压群雄，夺下本届大比魁首，宗门上下与有荣焉！'));
   } else if (wins === 2) {
     p.sectContribution += 60;
-    p.spirit += 150;
+    p.spirit += 150 * incomeScale(p.realmIdx);
     await io.narrate(green('两胜一负，你名列大比前茅，为宗门争光。'));
   } else if (wins === 1) {
     p.sectContribution += 30;
-    p.spirit += 50;
+    p.spirit += 50 * incomeScale(p.realmIdx);
     await io.narrate(yellow('一胜两负，你在大比中居于中游。'));
   } else {
     p.sectContribution += 10;
@@ -428,7 +428,7 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
   if (r3 === 'win') wins += 1;
 
   if (wins === 3) {
-    const loot = randint(300, 800);
+    const loot = randint(300, 800) * incomeScale(p.realmIdx);
     p.spirit += loot;
     p.materials['妖兽内丹'] = (p.materials['妖兽内丹'] ?? 0) + 2;
     p.sectContribution += 100;
@@ -440,7 +440,7 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
       await io.narrate(green('其藏经阁中功法皆不如你所学，尽数变卖。'));
     }
   } else if (wins === 2) {
-    const loot = randint(150, 400);
+    const loot = randint(150, 400) * incomeScale(p.realmIdx);
     p.spirit += loot;
     await io.narrate(green(`小胜！你击退 ${target.name} 主力，掠夺灵石 ${loot}。`));
   } else {
@@ -455,8 +455,9 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
 /** 每年宗门结算（宗主俸禄等），由主循环 yearEnd 调用。 */
 export function sectYearEnd(p: Player, io: GameIO): void {
   if (p.sectMaster && p.sect !== '散修') {
-    p.spirit += MASTER_SALARY;
-    io.print(dim(`宗主俸禄 +${MASTER_SALARY} 灵石。`));
+    const salary = MASTER_SALARY * incomeScale(p.realmIdx);
+    p.spirit += salary;
+    io.print(dim(`宗主俸禄 +${salary} 灵石。`));
   }
 }
 
