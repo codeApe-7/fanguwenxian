@@ -250,7 +250,7 @@ function showStatus(state: GameState, io: GameIO): void {
   io.print(rule('═'));
 }
 
-async function mainMenu(state: GameState, io: GameIO): Promise<string> {
+export async function mainMenu(state: GameState, io: GameIO): Promise<string> {
   const p = state.player;
   showStatus(state, io);
   io.print(blue('═══ 选择你的行动 ═══'));
@@ -259,16 +259,21 @@ async function mainMenu(state: GameState, io: GameIO): Promise<string> {
   const atPeak = p.realmIdx === REALMS.length - 1 && p.stageIdx === REALMS[p.realmIdx].stages.length - 1;
   const breakLabel = atPeak || p.cultivation >= 100 ? '突破境界' : `突破境界${dim('（修为未满）')}`;
 
-  // 动态菜单：未结识红颜时隐藏「拜访红颜」，其余选项重新编号，行动键保持稳定。
+  // 固定编号菜单：「拜访红颜」恒占第 6 位，未结识红颜时置灰而非隐藏。
+  // 若按有无红颜增删条目，「突破境界」会在女主登场那年从 6) 跳到 7)，
+  // 全局按得最多的键在玩家手底下移位。
   const items: Array<[string, string]> = [
     ['1', '闭关修炼'],
     ['2', '游历探索'],
     ['3', '坊市交易'],
     ['4', '四艺技艺'],
     ['5', '宗门'],
+    ['6', state.leads.length > 0 ? '拜访红颜' : `拜访红颜${dim('（尚无红颜）')}`],
+    ['7', breakLabel],
+    ['8', '存档'],
+    ['9', '服用丹药'],
+    ['10', '退出游戏'],
   ];
-  if (state.leads.length > 0) items.push(['6', '拜访红颜']);
-  items.push(['7', breakLabel], ['8', '存档'], ['9', '服用丹药'], ['10', '退出游戏']);
 
   const labels = items.map(([, label], i) => `${i + 1}) ${label}`);
   for (let i = 0; i < labels.length; i += 3) {
@@ -436,8 +441,8 @@ async function doAction(state: GameState, action: string, io: GameIO): Promise<A
       if (await sectMenu(state, io)) return { years: 1 };
       return { years: 0 };
     case '6':
-      await romance(p, state.leads, io);
-      return { years: 1 };
+      // 拜访耗时由 romance 按实际互动次数返回（每次交谈/论道/赠礼/双修各 1 年）
+      return { years: await romance(p, state.leads, io) };
     case '7': {
       const lastRealm = REALMS.length - 1;
       if (p.realmIdx === lastRealm && p.stageIdx === REALMS[lastRealm].stages.length - 1) {

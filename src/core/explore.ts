@@ -2,7 +2,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState } from '../types.js';
-import { chance, weightedChoice } from './rng.js';
+import { chance, weightedChoice, randint } from './rng.js';
 import { makeLead } from './character.js';
 import { leadDescription } from './romance.js';
 import { EVENTS } from './events.js';
@@ -28,7 +28,7 @@ export async function explore(state: GameState, io: GameIO): Promise<void> {
   const base = 0.2 + (eb > 0 ? eb * sectPower(p) : eb);
   const meetChance = base * (1 - state.leads.length * 0.15);
   if (chance(meetChance) && state.leads.length < 5) {
-    const lead = makeLead(p);
+    const lead = makeLead(p, randint(12, 22)); // 「颇有兴致」——已有初步好感
     state.leads.push(lead);
     await io.clear();
     await io.narrate('你于山水之间游历，忽见一位佳人……');

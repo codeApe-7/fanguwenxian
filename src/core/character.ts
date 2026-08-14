@@ -66,8 +66,11 @@ export function createPlayer(name: string, origin: OriginDef, sect: SectDef): Pl
   return p;
 }
 
-/** 随机生成一位女主，修为围绕玩家境界、可高于主角（前辈/师姐）。 */
-export function makeLead(player: Player): FemaleLead {
+/**
+ * 随机生成一位女主，修为围绕玩家境界、可高于主角（前辈/师姐）。
+ * favor 由邂逅场景决定：萍水相逢低、救命之恩高，需与该处旁白口吻相称。
+ */
+export function makeLead(player: Player, favor = 0): FemaleLead {
   const name = pick(SURNAMES) + pick(FEMALE_GIVEN);
   const offset = pick([-1, 0, 0, 1, 1, 2]); // 可高主角两阶，少数低一阶
   const idx = Math.max(0, Math.min(REALMS.length - 1, player.realmIdx + offset));
@@ -81,7 +84,7 @@ export function makeLead(player: Player): FemaleLead {
     realm,
     realmIdx: idx,
     stageIdx,
-    favor: 0,
+    favor: Math.max(0, Math.min(100, favor)),
     met: true,
     dao: false,
   };

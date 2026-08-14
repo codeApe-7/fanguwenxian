@@ -5,7 +5,7 @@ import type { GameIO } from './src/io.js';
 import type { GameState, FemaleLead } from './src/types.js';
 import { ORIGINS, SECTS, REALMS, SCENARIOS, ARCHETYPES, ROOT_COSTS, TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, TREASURES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, techniqueSummary, upgradeTechnique } from './src/content.js';
 import { createPlayer, rollRoot, makeLead } from './src/core/character.js';
-import { createCharacter } from './src/core/engine.js';
+import { createCharacter, mainMenu } from './src/core/engine.js';
 import { maybeTriggerStory } from './src/core/storyline.js';
 import { sectMenu, sectYearEnd } from './src/core/sect.js';
 import { cultivate, breakthrough, takePill, ascend, comprehendFragments } from './src/core/cultivate.js';
@@ -349,6 +349,63 @@ async function main() {
   await romance(dP, dState.leads, io);
   assert(dP.cultivation === 16, '双修修为 +16（论道两倍）');
   assert(dLead.favor > 50, '双修提升好感');
+
+  console.log('· 拜访耗时（论道/双修不再一年内刷满修为）');
+  const rP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  const rLead = makeLead(rP, 60);
+  rLead.realmIdx = rP.realmIdx;
+  rLead.stageIdx = rP.stageIdx;
+  rP.cultivation = 0;
+  io.queue = ['1', '2', '2', '2', '0', '0']; // 拜访第 1 位 → 论道 ×3 → 退出拜访 → 退出红颜
+  const rYears = await romance(rP, [rLead], io);
+  assert(rYears === 3, `论道 3 次应耗时 3 年（实际 ${rYears}）`);
+  assert(rP.cultivation === 24, `论道 3 次修为 +24（实际 ${rP.cultivation}）`);
+
+  const talkP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  const talkLead = makeLead(talkP, 20);
+  io.queue = ['1', '1', '1', '0', '0']; // 交谈 ×2
+  assert((await romance(talkP, [talkLead], io)) === 2, '交谈 2 次耗时 2 年');
+  io.queue = ['0']; // 只看不动手
+  assert((await romance(talkP, [talkLead], io)) === 0, '未互动则不耗时');
+
+  console.log('· 论道/双修收益随境界难度缩放');
+  const lateP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  lateP.realmIdx = REALMS.length - 1; // 渡劫期
+  lateP.stageIdx = 0;
+  lateP.cultivation = 0;
+  const lateLead = makeLead(lateP, 90);
+  lateLead.realmIdx = lateP.realmIdx;
+  lateLead.stageIdx = lateP.stageIdx;
+  lateLead.dao = true;
+  io.queue = ['1', '4', '0', '0'];
+  await romance(lateP, [lateLead], io);
+  assert(
+    lateP.cultivation > 0 && lateP.cultivation < 16,
+    `渡劫期双修收益应低于炼气期的 16（实际 ${lateP.cultivation}）`,
+  );
+
+  console.log('· 主菜单编号固定（红颜登场不挤动突破境界）');
+  const menuIO = new MockIO();
+  const menuState: GameState = { player: createPlayer('测试', ORIGINS[0], SECTS[0]), leads: [] };
+  await mainMenu(menuState, menuIO);
+  const noLeadMenu = menuIO.log.join('\n');
+  menuIO.log = [];
+  menuState.leads = [makeLead(menuState.player, 20)];
+  await mainMenu(menuState, menuIO);
+  const withLeadMenu = menuIO.log.join('\n');
+  assert(noLeadMenu.includes('7) 突破境界'), '无红颜时「突破境界」为 7)');
+  assert(withLeadMenu.includes('7) 突破境界'), '有红颜时「突破境界」仍为 7)');
+  assert(noLeadMenu.includes('6) 拜访红颜'), '无红颜时「拜访红颜」仍占 6) 并置灰');
+  assert(withLeadMenu.includes('6) 拜访红颜'), '有红颜时「拜访红颜」为 6)');
+
+  console.log('· 邂逅红颜初始好感与旁白相称');
+  assert(makeLead(p).favor === 0, 'makeLead 默认好感 0');
+  assert(makeLead(p, 30).favor === 30, 'makeLead 可指定初始好感');
+  assert(makeLead(p, 150).favor === 100, '初始好感封顶 100');
+  const metState: GameState = { player: createPlayer('测试', ORIGINS[0], SECTS[0]), leads: [] };
+  for (let i = 0; i < 120 && metState.leads.length < 3; i++) await explore(metState, io);
+  assert(metState.leads.length > 0, '百余次游历应至少邂逅一位红颜');
+  assert(metState.leads.every((l) => l.favor > 0), '游历邂逅的红颜初始好感 > 0（与「颇有兴致」相称）');
 
   console.log('· 服用丹药');
   p.pills['凝气丹'] = 5;

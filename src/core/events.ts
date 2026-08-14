@@ -754,7 +754,7 @@ export const EVENTS: ExploreEvent[] = [
     run: async (p, state, io) => {
       await io.narrate('【游历·搭救落难女修】一名女修被妖兽围攻，危在旦夕。');
       if (state.leads.length < 5 && chance(0.6)) {
-        const lead = makeLead(p);
+        const lead = makeLead(p, randint(28, 38)); // 「感激不已，芳心暗许」——救命之恩，好感最高
         state.leads.push(lead);
         await io.narrate('你出手相救，杀退妖兽。');
         io.print(leadDescription(lead));
@@ -791,7 +791,7 @@ export const EVENTS: ExploreEvent[] = [
     run: async (p, state, io) => {
       await io.narrate('【游历·市集奇遇】你逛至一处修士集市，人声鼎沸。');
       if (state.leads.length < 5 && chance(0.4)) {
-        const lead = makeLead(p);
+        const lead = makeLead(p, randint(8, 16)); // 「相谈甚欢」——萍水相逢，好感最低
         state.leads.push(lead);
         io.print(leadDescription(lead));
         await io.narrate(`你在摊前与 ${lead.name} 偶遇，相谈甚欢。`);
