@@ -269,6 +269,18 @@ async function main() {
   await talisman(p, io);
   await romance(p, state.leads, io);
 
+  console.log('· 双修（道侣专属）');
+  const dP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  const dLead = makeLead(dP);
+  dLead.dao = true;
+  dLead.favor = 50;
+  const dState: GameState = { player: dP, leads: [dLead] };
+  dP.cultivation = 0;
+  io.queue = ['1', '4', '', '0']; // 拜访第 1 位 → 双修 → 回车 → 返回
+  await romance(dP, dState.leads, io);
+  assert(dP.cultivation === 16, '双修修为 +16（论道两倍）');
+  assert(dLead.favor > 50, '双修提升好感');
+
   console.log('· 服用丹药');
   p.pills['凝气丹'] = 5;
   io.answer = '1';

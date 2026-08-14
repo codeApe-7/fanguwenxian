@@ -2,7 +2,7 @@
 
 import type { GameIO } from '../io.js';
 import type { Player, FemaleLead } from '../types.js';
-import { PERSONALITY_MODS, REALMS } from '../content.js';
+import { PERSONALITY_MODS, REALMS, sectOf } from '../content.js';
 import { green, red, yellow, magenta, dim } from '../colors.js';
 import { randint, chance } from './rng.js';
 
@@ -64,7 +64,7 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<void>
     io.print(leadDescription(lead));
     io.print(dim('─'.repeat(40)));
     io.print(' 1) 交谈      2) 论道（需好感≥30）');
-    io.print(' 3) 赠礼      4) 结为道侣（需好感≥80）');
+    io.print(lead.dao ? ' 3) 赠礼      4) 双修' : ' 3) 赠礼      4) 结为道侣（需好感≥80）');
     io.print(' 0) 返回');
     const ch = await io.ask('选择：');
     if (ch === '0' || ch === '') return;
@@ -85,7 +85,8 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<void>
     } else if (ch === '3') {
       await giftLead(p, lead, io);
     } else if (ch === '4') {
-      await makeDaoCompanion(p, lead, io);
+      if (lead.dao) await dualCultivate(p, lead, io);
+      else await makeDaoCompanion(p, lead, io);
     }
     await io.pause();
   }
@@ -132,5 +133,18 @@ async function makeDaoCompanion(p: Player, lead: FemaleLead, io: GameIO): Promis
   p.daoCompanion = lead.name;
   p.heart = Math.min(100, p.heart + 10);
   await io.narrate(magenta(`山盟海誓，天地为证。你与 ${lead.name} 结为道侣，从此携手仙途！`));
-  await io.narrate('双修之效：往后修炼速度将大幅提升。');
+  await io.narrate('此后拜访她，可与之双修，共参大道（修为收益为论道两倍）。');
+}
+
+/** 双修（道侣专属）：修为收益为论道两倍（16），合欢宗等双修宗门再加成。 */
+async function dualCultivate(p: Player, lead: FemaleLead, io: GameIO): Promise<void> {
+  const dual = sectOf(p)?.dualBonus ?? 0; // 合欢宗双修加成 +50%
+  const gain = Math.round(16 * (1 + dual));
+  const favor = randint(5, 10);
+  lead.favor = Math.min(100, lead.favor + favor);
+  p.cultivation = Math.min(100, p.cultivation + gain);
+  p.heart = Math.min(100, p.heart + 2);
+  await io.narrate(magenta(`你与 ${lead.name} 阴阳和合，共参大道。`));
+  io.print(green(`双修圆满：修为 +${gain}，好感 +${favor}，心境 +2。`));
+  if (p.cultivation >= 100) io.print(yellow('修为已臻圆满，可尝试突破境界。'));
 }
