@@ -467,7 +467,7 @@ export function sectYearEnd(p: Player, io: GameIO): void {
 function joinReqText(s: SectDef): string {
   const parts: string[] = [];
   if (s.minRealm !== undefined) parts.push(`${REALMS[s.minRealm].name}以上`);
-  if (s.needLead) parts.push('有红颜');
+  if (s.needDao) parts.push('有道侣');
   if (s.joinFee) parts.push(`缴${s.joinFee}灵石`);
   return parts.join('、');
 }
@@ -478,8 +478,8 @@ function checkJoinReq(s: SectDef, state: GameState): string | null {
   if (s.minRealm !== undefined && p.realmIdx < s.minRealm) {
     return `修为不足，需 ${REALMS[s.minRealm].name} 以上方可拜入。`;
   }
-  if (s.needLead && state.leads.length === 0) {
-    return '你尚未结识红颜，不得入宗。';
+  if (s.needDao && !state.leads.some((l) => l.dao)) {
+    return '你尚未与红颜结为道侣，不得入宗。';
   }
   if (s.joinFee && p.spirit < s.joinFee) {
     return `灵石不足（需缴纳 ${s.joinFee} 灵石拜师费）。`;

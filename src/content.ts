@@ -685,7 +685,7 @@ export interface SectDef {
   skill?: string;        // 入宗即掌握的副业
   craftBonus?: number;   // 对应副业成功率 +
   minRealm?: number;     // 加入门槛：最低大境界下标
-  needLead?: boolean;    // 加入门槛：需结识红颜
+  needDao?: boolean;     // 加入门槛：需与红颜结为道侣
   joinFee?: number;      // 加入缴纳灵石
   demonResist?: boolean; // 突破失败代价减半
   technique?: string;   // 镇宗功法（仅本宗藏经阁可兑换）
@@ -701,7 +701,7 @@ export const SECTS: SectDef[] = [
   { name: '太乙剑宗', desc: '以剑入道，杀伐果决。', bonus: '战斗攻击 +20%', trait: '剑心通明——战斗胜利心境 +1。', rule: '剑在人在，不得弃剑。', atkPct: 0.2, minRealm: 1, traitKey: 'battleHeart', technique: '青霄剑诀' },
   { name: '玄清门', desc: '玄门正宗，中正平和。', bonus: '突破成功率 +10%', trait: '道基稳固——突破失败修为损失减半。', rule: '清修守正，不涉魔道。', breakBonus: 0.1, minRealm: 1, traitKey: 'breakLossHalf', technique: '太清玉册' },
   { name: '血煞魔宗', desc: '魔道宗门，杀伐速成。', bonus: '修炼 +15%、攻击 +10%，突破成功率 −5%', trait: '杀伐证道——战斗胜利灵石 +20%。', rule: '强者为尊，败者退避。', cultPct: 0.15, atkPct: 0.1, breakBonus: -0.05, minRealm: 1, traitKey: 'battleLoot', technique: '血煞魔功' },
-  { name: '合欢宗', desc: '阴阳双修，道侣相济。', bonus: '双修修炼加成 +30%', trait: '阴阳相济——道侣合修，进境翻倍。', rule: '道侣之事，须两厢情愿。', dualBonus: 0.5, needLead: true, technique: '阴阳和合功' },
+  { name: '合欢宗', desc: '阴阳双修，道侣相济。', bonus: '双修修炼加成 +30%', trait: '阴阳相济——道侣合修，进境翻倍。', rule: '道侣之事，须两厢情愿。', dualBonus: 0.5, needDao: true, technique: '阴阳和合功' },
 ];
 
 /** 当前宗门定义（未知宗门返回 undefined）。 */

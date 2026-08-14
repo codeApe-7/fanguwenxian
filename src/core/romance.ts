@@ -2,7 +2,7 @@
 
 import type { GameIO } from '../io.js';
 import type { Player, FemaleLead } from '../types.js';
-import { PERSONALITY_MODS, REALMS, sectOf } from '../content.js';
+import { PERSONALITY_MODS, REALMS, PILLS, MATERIALS, sectOf } from '../content.js';
 import { green, red, yellow, magenta, dim } from '../colors.js';
 import { randint, chance } from './rng.js';
 
@@ -22,6 +22,11 @@ function realmGapMult(p: Player, l: FemaleLead): number {
 /** 红颜相对主角高出的境界数（用于论道/双修额外收益）。 */
 function realmLead(l: FemaleLead, p: Player): number {
   return Math.max(0, l.realmIdx - p.realmIdx);
+}
+
+/** 礼物珍贵度 -> 基础好感（越珍贵越高）。 */
+function giftFavor(value: number): number {
+  return Math.max(1, Math.round(value / 20));
 }
 
 /** 红颜随时间成长修为（每年结算，最多领先主角两个大境界，可至渡劫）。 */
@@ -109,31 +114,51 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<void>
 }
 
 async function giftLead(p: Player, lead: FemaleLead, io: GameIO): Promise<void> {
-  io.print('赠礼： 1) 灵石50  2) 灵石200  3) 凝气丹  4) 聚灵丹');
-  const ch = await io.ask('选择礼物：');
-  const gains: Record<string, number> = { '1': 4, '2': 12, '3': 6, '4': 10 };
-  if (!(ch in gains)) {
-    io.print(red('无效选择。'));
+  while (true) {
+    // 动态构建可赠清单：玩家身上有的灵石 / 丹药 / 材料，越珍贵越好
+    const gifts: Array<{ label: string; value: number; cost: { spirit?: number; pill?: string; material?: string } }> = [];
+    if (p.spirit >= 50) gifts.push({ label: '灵石×50', value: 50, cost: { spirit: 50 } });
+    if (p.spirit >= 200) gifts.push({ label: '灵石×200', value: 200, cost: { spirit: 200 } });
+    if (p.spirit >= 500) gifts.push({ label: '灵石×500', value: 500, cost: { spirit: 500 } });
+    for (const [name, n] of Object.entries(p.pills ?? {})) {
+      if (n <= 0) continue;
+      gifts.push({ label: `${name}×1`, value: PILLS[name]?.price ?? 0, cost: { pill: name } });
+    }
+    for (const [name, n] of Object.entries(p.materials ?? {})) {
+      if (n <= 0) continue;
+      gifts.push({ label: `${name}×1`, value: MATERIALS[name] ?? 0, cost: { material: name } });
+    }
+    gifts.sort((a, b) => a.value - b.value);
+    if (gifts.length === 0) {
+      io.print(red('你身无长物，无可相赠。'));
+      return;
+    }
+    io.print('赠礼（越珍贵，好感越高、越易被接受）：');
+    gifts.forEach((g, i) => io.print(` ${i + 1}) ${g.label}（好感约 +${Math.min(100, giftFavor(g.value))}）`));
+    io.print(' 0) 返回');
+    const ch = await io.ask('选择礼物：');
+    if (ch === '0' || ch === '') return;
+    const idx = parseInt(ch, 10);
+    if (isNaN(idx) || idx < 1 || idx > gifts.length) {
+      io.print(red('无效编号。'));
+      continue;
+    }
+    const gift = gifts[idx - 1];
+    // 接受概率：好感越高、礼物越珍贵越易被接受
+    const rejectChance = Math.max(0, 0.75 - lead.favor * 0.01 - gift.value * 0.002);
+    if (chance(rejectChance)) {
+      io.print(yellow(`${lead.name} 看了你一眼，婉言谢绝了你的礼物。`));
+      await io.pause();
+      continue;
+    }
+    if (gift.cost.spirit) p.spirit -= gift.cost.spirit;
+    if (gift.cost.pill) p.pills[gift.cost.pill] -= 1;
+    if (gift.cost.material) p.materials[gift.cost.material] -= 1;
+    const gain = Math.max(1, Math.round(giftFavor(gift.value) * modsOf(lead).gift * realmGapMult(p, lead)));
+    lead.favor = Math.min(100, lead.favor + gain);
+    io.print(green(`${lead.name} 收下礼物，好感 +${gain}。`));
     return;
   }
-  if (ch === '1' || ch === '2') {
-    const cost = ch === '1' ? 50 : 200;
-    if (p.spirit < cost) {
-      io.print(red('灵石不足。'));
-      return;
-    }
-    p.spirit -= cost;
-  } else {
-    const pill = ch === '3' ? '凝气丹' : '聚灵丹';
-    if ((p.pills[pill] ?? 0) <= 0) {
-      io.print(red(`你没有 ${pill}。`));
-      return;
-    }
-    p.pills[pill] -= 1;
-  }
-  const gain = Math.max(1, Math.round(gains[ch] * modsOf(lead).gift * realmGapMult(p, lead)));
-  lead.favor = Math.min(100, lead.favor + gain);
-  io.print(green(`${lead.name} 收下礼物，好感 +${gain}。`));
 }
 
 async function makeDaoCompanion(p: Player, lead: FemaleLead, io: GameIO): Promise<void> {

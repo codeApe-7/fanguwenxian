@@ -127,9 +127,19 @@ async function main() {
   assert(sectP.sect === '散修', '叛出转散修');
   assert(sectP.betrayedSect === '丹霞谷' && sectP.betrayYears === 15, '被旧宗追杀 15 年');
   assert(sectP.sectRank === 0 && sectP.sectContribution === 0, '叛出后职阶贡献清零');
-  io.queue = ['1', '9']; // 散修菜单「拜入」→ 选第 9 个（合欢宗，需红颜）
+  io.queue = ['1', '9']; // 散修菜单「拜入」→ 选第 9 个（合欢宗，需道侣）
   await sectMenu(sectState, io);
-  assert(sectP.sect === '散修', '无红颜不得入合欢宗');
+  assert(sectP.sect === '散修', '无道侣不得入合欢宗');
+  sectState.leads = [makeLead(sectP)]; // 仅结识红颜（非道侣）
+  io.queue = ['1', '9'];
+  await sectMenu(sectState, io);
+  assert(sectP.sect === '散修', '仅结识红颜（非道侣）不得入合欢宗');
+  const hhLead = makeLead(sectP);
+  hhLead.dao = true;
+  sectState.leads = [hhLead];
+  io.queue = ['1', '9'];
+  await sectMenu(sectState, io);
+  assert(sectP.sect === '合欢宗', '有道侣方可入合欢宗');
 
   console.log('· 宗门任务（难度标注与境界缩放）');
   const tkP = createPlayer('测试', ORIGINS[0], SECTS[1]); // 丹霞谷
