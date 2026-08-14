@@ -9,7 +9,7 @@ import { chance, randint } from './rng.js';
 /** 闭关修炼一年，返回本年度修为增长。 */
 export function cultivate(p: Player): number {
   const diff = REALMS[p.realmIdx].difficulty;
-  let gain = 10 * p.rootMult * (TECHNIQUES[p.technique]?.mult ?? 1) * diff * p.cheatBonus;
+  let gain = 10 * p.rootMult * (p.aptitude ?? 1.0) * (TECHNIQUES[p.technique]?.mult ?? 1) * diff * p.cheatBonus;
   gain *= techPower(p); // 功法熟练度加成
   const cultPct = sectOf(p)?.cultPct ?? 0; // 血煞魔宗/太虚阵宗等修炼加成
   gain *= 1 + (cultPct > 0 ? cultPct * sectPower(p) : cultPct);

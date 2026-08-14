@@ -48,6 +48,7 @@ export function loadGame(io: GameIO): GameState | null {
     p.fragments ??= {};
     p.spells ??= [];
     p.pillToxin ??= 0;
+    p.aptitude ??= 1.0;
     p.skills ??= [];
     p.formation ??= '无';
     p.talismans ??= {};

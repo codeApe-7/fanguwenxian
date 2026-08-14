@@ -3,14 +3,16 @@
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
 import {
-  REALMS, ORIGINS, SECTS, SCENARIOS, GOLDEN_FINGERS, SURNAMES,
+  REALMS, ORIGINS, SECTS, SCENARIOS, ARCHETYPES, ROOTS, ROOT_COSTS,
+  TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SURNAMES,
   SECT_RANKS, SECT_RANK_NEED, TECHNIQUES,
   techLevelName, techPower, techPowerOf, switchTechnique, techniqueSummary,
   toxinPenalty, playerTitle, playerAttack, playerDefense, playerHp,
 } from '../content.js';
+import type { Talent, OriginDef } from '../content.js';
 import { blue, bold, green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick } from './rng.js';
-import { createPlayer, rollRoot } from './character.js';
+import { createPlayer } from './character.js';
 import { cultivate, breakthrough, ascend, takePill, comprehendFragments } from './cultivate.js';
 import { explore } from './explore.js';
 import { market } from './market.js';
@@ -47,6 +49,65 @@ export async function intro(io: GameIO): Promise<'1' | '2' | '3'> {
   }
 }
 
+// —— 加点辅助：从一组天赋中选择一项（0 返回 null） ——
+async function pickTalent(io: GameIO, title: string, talents: Talent[]): Promise<Talent | null> {
+  while (true) {
+    io.print(cyan(`—— ${title} ——`));
+    talents.forEach((t, i) => {
+      const tag = t.cost === 0 ? dim('（免费）') : t.cost < 0 ? yellow(`（花费 ${-t.cost}）`) : green(`（返还 ${t.cost}）`);
+      io.print(` ${i + 1}) ${t.name}：${t.desc}${tag}`);
+    });
+    io.print(' 0) 返回');
+    const ch = await io.ask('选择：');
+    if (ch === '0' || ch === '') return null;
+    const idx = parseInt(ch, 10);
+    if (isNaN(idx) || idx < 1 || idx > talents.length) {
+      io.print(red('无效编号。'));
+      continue;
+    }
+    return talents[idx - 1];
+  }
+}
+
+async function pickOrigin(io: GameIO): Promise<OriginDef | null> {
+  while (true) {
+    io.print(cyan('—— 角色出生 ——'));
+    ORIGINS.forEach((o, i) => {
+      const tag = o.cost === 0 ? dim('（免费）') : o.cost < 0 ? yellow(`（花费 ${-o.cost}）`) : green(`（返还 ${o.cost}）`);
+      io.print(` ${i + 1}) ${o.name}：${o.desc}${tag}`);
+    });
+    io.print(' 0) 返回');
+    const ch = await io.ask('选择：');
+    if (ch === '0' || ch === '') return null;
+    const idx = parseInt(ch, 10);
+    if (isNaN(idx) || idx < 1 || idx > ORIGINS.length) {
+      io.print(red('无效编号。'));
+      continue;
+    }
+    return ORIGINS[idx - 1];
+  }
+}
+
+async function pickRoot(io: GameIO): Promise<string | null> {
+  while (true) {
+    io.print(cyan('—— 灵根 ——'));
+    ROOTS.forEach((r, i) => {
+      const cost = ROOT_COSTS[r.name] ?? 0;
+      const tag = cost === 0 ? dim('（免费）') : cost < 0 ? yellow(`（花费 ${-cost}）`) : green(`（返还 ${cost}）`);
+      io.print(` ${i + 1}) ${r.name}：修炼 ×${r.mult}${tag}`);
+    });
+    io.print(' 0) 返回');
+    const ch = await io.ask('选择：');
+    if (ch === '0' || ch === '') return null;
+    const idx = parseInt(ch, 10);
+    if (isNaN(idx) || idx < 1 || idx > ROOTS.length) {
+      io.print(red('无效编号。'));
+      continue;
+    }
+    return ROOTS[idx - 1].name;
+  }
+}
+
 export async function createCharacter(io: GameIO): Promise<GameState> {
   await io.clear();
   await io.narrate('你，一个再平凡不过的山野少年，即将踏上逆天改命的仙途。');
@@ -54,68 +115,77 @@ export async function createCharacter(io: GameIO): Promise<GameState> {
   const name = await io.ask('请输入你的姓名（回车随机）：');
   const finalName = name || pick(SURNAMES) + pick(['凡', '风', '尘', '毅', '岳', '青', '远']);
 
-  // —— 命运剧本 ——
+  // —— 命运剧本（纯故事线，决定主线剧情） ——
   io.print('—— 选择你的命运剧本 ——');
   SCENARIOS.forEach((s, i) => io.print(` ${i + 1}) ${s.name}：${s.tagline}`));
   const sci = parseInt(await io.ask('选择剧本：', SCENARIOS.map((_, i) => String(i + 1)), '1'), 10) - 1;
   const scenario = SCENARIOS[sci];
   for (const line of scenario.intro) await io.narrate(line);
 
-  // —— 出身（剧本专属路线，每条剧本可选的出身不同） ——
-  const originList = scenario.origins.map((n) => ORIGINS.find((o) => o.name === n)!);
-  io.print('—— 选择出身 ——');
-  originList.forEach((o, i) => io.print(` ${i + 1}) ${o.name}：${o.desc}`));
-  const oi = parseInt(await io.ask('选择出身：', originList.map((_, i) => String(i + 1)), '1'), 10) - 1;
+  // —— 角色设定（决定修炼倍率与天赋点预算） ——
+  io.print('—— 选择你的角色设定 ——');
+  ARCHETYPES.forEach((a, i) => io.print(` ${i + 1}) ${a.name}：${a.desc}（天赋点 ${a.budget}）`));
+  const ai = parseInt(await io.ask('选择角色设定：', ARCHETYPES.map((_, i) => String(i + 1)), '1'), 10) - 1;
+  const archetype = ARCHETYPES[ai];
 
-  // —— 宗门（开局无门槛，全部门派皆可拜入；中途改投才有门槛） ——
+  // —— 天赋点加点（可反复修改，0 完成） ——
+  let origin = ORIGINS[0];
+  let aptitude = TALENT_APTITUDES.find((t) => t.cost === 0)!;
+  let root = '三灵根';
+  let body = TALENT_BODIES.find((t) => t.cost === 0)!;
+  let childhood = TALENT_CHILDHOODS.find((t) => t.cost === 0)!;
+  let youth = TALENT_YOUTHS.find((t) => t.cost === 0)!;
+  const totalCost = () => origin.cost + aptitude.cost + (ROOT_COSTS[root] ?? 0) + body.cost + childhood.cost + youth.cost;
+
+  while (true) {
+    await io.clear();
+    const remaining = archetype.budget + totalCost();
+    io.print(cyan('═══ 天赋加点 ═══'));
+    io.print(`剩余天赋点：${remaining >= 0 ? green(String(remaining)) : red(String(remaining))}`);
+    io.print(` 1) 角色出生：${origin.name}（${origin.desc}）`);
+    io.print(` 2) 资质：${aptitude.name}（${aptitude.desc}）`);
+    const rm = ROOTS.find((r) => r.name === root)!;
+    io.print(` 3) 灵根：${root}（修炼 ×${rm.mult}）`);
+    io.print(` 4) 先天体质：${body.name}（${body.desc}）`);
+    io.print(` 5) 儿时经历：${childhood.name}（${childhood.desc}）`);
+    io.print(` 6) 青年经历：${youth.name}（${youth.desc}）`);
+    io.print(' 0) 完成');
+    const ch = await io.ask('选择要修改的类别：', ['0', '1', '2', '3', '4', '5', '6'], '0');
+    if (ch === '0' || ch === '') {
+      if (remaining < 0) {
+        io.print(red('天赋点不足，请调整选择（可用返还点的缺陷来补齐）。'));
+        await io.pause();
+        continue;
+      }
+      break;
+    }
+    if (ch === '1') { const o = await pickOrigin(io); if (o) origin = o; }
+    else if (ch === '2') { const t = await pickTalent(io, '资质', TALENT_APTITUDES); if (t) aptitude = t; }
+    else if (ch === '3') { const r = await pickRoot(io); if (r) root = r; }
+    else if (ch === '4') { const t = await pickTalent(io, '先天体质', TALENT_BODIES); if (t) body = t; }
+    else if (ch === '5') { const t = await pickTalent(io, '儿时经历', TALENT_CHILDHOODS); if (t) childhood = t; }
+    else if (ch === '6') { const t = await pickTalent(io, '青年经历', TALENT_YOUTHS); if (t) youth = t; }
+  }
+
+  // —— 宗门（开局无门槛，全部门派皆可拜入） ——
   io.print('—— 选择宗门 ——');
   SECTS.forEach((s, i) => io.print(` ${i + 1}) ${s.name}：${s.desc}（${s.bonus}）`));
   const si = parseInt(await io.ask('选择宗门：', SECTS.map((_, i) => String(i + 1)), '1'), 10) - 1;
   const sectDef = SECTS[si];
 
-  const p = createPlayer(finalName, originList[oi], sectDef);
-  // 剧本加成
+  // —— 汇总落成 ——
+  const p = createPlayer(finalName, origin, sectDef);
   p.scenario = scenario.name;
-  p.spirit += scenario.spirit;
-  p.heart = Math.max(0, Math.min(100, p.heart + scenario.heart));
-  // 宗门加成（心境/副业）
+  p.cheatBonus = archetype.cheatBonus;
+  p.goldenFinger = archetype.name;
+  p.root = root;
+  p.rootMult = ROOTS.find((r) => r.name === root)!.mult;
+  aptitude.apply(p); // 资质（绝对值）
+  body.apply(p);     // 体质（增量，可与资质叠乘）
+  childhood.apply(p);
+  youth.apply(p);
   if (sectDef.heartBonus) p.heart = Math.max(0, Math.min(100, p.heart + sectDef.heartBonus));
   if (sectDef.skill && !p.skills.includes(sectDef.skill)) p.skills.push(sectDef.skill);
-
-  // —— 测灵根（可重测） ——
-  await io.narrate('十六岁那年，一位游方道人见你根骨，为你测灵根……');
-  let root = rollRoot();
-  p.root = root.name;
-  p.rootMult = root.mult;
-  await io.narrate(`道人抚须叹道："竟是 ${yellow(p.root)}！"`);
-  if (p.root === '五灵根' || p.root === '四灵根') {
-    await io.narrate(dim('此等伪灵根，修行之路注定艰难……'));
-  } else {
-    await io.narrate('此等灵根，倒也有些仙缘。');
-  }
-  let rolls = scenario.rootRolls;
-  while (rolls > 0) {
-    const ch = await io.ask(`是否重测灵根？（还可重测 ${rolls} 次）(y/n)`, ['y', 'n'], 'n');
-    if (ch !== 'y') break;
-    rolls -= 1;
-    root = rollRoot();
-    p.root = root.name;
-    p.rootMult = root.mult;
-    await io.narrate(`再测灵根，竟是 ${yellow(p.root)}！`);
-  }
-
-  // —— 金手指三选一 ——
-  io.print('—— 机缘已至，择一金手指 ——');
-  GOLDEN_FINGERS.forEach((g, i) => io.print(` ${i + 1}) ${g.name}：${g.desc}`));
-  const gi = parseInt(await io.ask('选择金手指：', GOLDEN_FINGERS.map((_, i) => String(i + 1)), '1'), 10) - 1;
-  const gf = GOLDEN_FINGERS[gi];
-  p.goldenFinger = gf.name;
-  p.cheatBonus = gf.cheatBonus;
-  if (gf.spirit) p.spirit += gf.spirit;
-  if (gf.pill) p.pills[gf.pill] = (p.pills[gf.pill] ?? 0) + 1;
-  if (gf.material) for (const [m, n] of Object.entries(gf.material)) p.materials[m] = (p.materials[m] ?? 0) + n;
-  await io.narrate(green(`你获得金手指【${gf.name}】！${gf.desc}。`));
-  await io.pause();
 
   // —— 剧本专属伏笔 ——
   await io.narrate(scenario.hook);
@@ -123,7 +193,7 @@ export async function createCharacter(io: GameIO): Promise<GameState> {
   // —— 拜入宗门接引 ——
   await io.narrate(`你拜入 ${green(p.sect)}，领取入门灵石，正式踏上仙途。`);
   p.spirit += 50;
-  p.cultivation = 5;
+  p.cultivation = Math.min(100, p.cultivation + 5);
   await io.pause();
 
   return { player: p, leads: [] };

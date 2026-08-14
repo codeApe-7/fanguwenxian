@@ -38,6 +38,7 @@ export function createPlayer(name: string, origin: OriginDef, sect: SectDef): Pl
     pillToxin: 0,
     root: '三灵根',
     rootMult: 1.0,
+    aptitude: 1.0,
     realmIdx: 0,
     stageIdx: 0,
     cultivation: 0,

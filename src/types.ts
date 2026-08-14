@@ -18,6 +18,7 @@ export interface Player {
   pillToxin: number;                       // 丹毒 0~100（过高降低修炼效率）
   root: string;
   rootMult: number;
+  aptitude: number;      // 资质修炼倍率（开局加点）
   realmIdx: number;      // 大境界下标
   stageIdx: number;      // 小境界下标
   cultivation: number;   // 当前小境界修为 0~100

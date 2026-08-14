@@ -347,20 +347,95 @@ export const TALISMANS: Record<string, TalismanDef> = {
   聚灵符: { cost: { 灵草: 3, 灵花: 1 }, type: 'cult', value: 15, desc: '修炼时修为 +15' },
 };
 
-// ---- 金手指（开局三选一） ----
-export interface GoldenFingerDef {
+// ---- 角色设定（主角模板，决定修炼倍率与天赋点预算） ----
+export interface ArchetypeDef {
   name: string;
   desc: string;
-  cheatBonus: number;              // 修炼倍率
-  spirit?: number;                 // 赠灵石
-  pill?: string;                   // 赠丹药
-  material?: Record<string, number>; // 赠材料
+  cheatBonus: number; // 修炼倍率
+  budget: number;     // 起始天赋点
 }
 
-export const GOLDEN_FINGERS: GoldenFingerDef[] = [
-  { name: '太初瓶', desc: '可催熟灵药、逆转光阴，修炼 ×2.0', cheatBonus: 2.0, material: { 灵草: 3 } },
-  { name: '造化珠', desc: '气运加身，修炼 ×1.6，赠筑基丹一枚', cheatBonus: 1.6, pill: '筑基丹' },
-  { name: '天机盘', desc: '推演天机，修炼 ×1.4，赠灵石 300', cheatBonus: 1.4, spirit: 300 },
+export const ARCHETYPES: ArchetypeDef[] = [
+  { name: '天命主角', desc: '命定之子，气运加身，诸事顺遂。', cheatBonus: 1.3, budget: 20 },
+  { name: '龙傲天', desc: '天之骄子，天资绝世，一路碾压。', cheatBonus: 1.5, budget: 16 },
+  { name: '异世傲天', desc: '怀揣异宝穿越而来的天命之子。', cheatBonus: 1.8, budget: 12 },
+  { name: '红尘众生', desc: '芸芸众生中的平凡一人，一步一个脚印。', cheatBonus: 1.0, budget: 30 },
+];
+
+// ---- 开局天赋（天赋点加点，cost 负=花费、正=返还） ----
+export interface Talent {
+  name: string;
+  desc: string;
+  cost: number;             // 负=花费天赋点，正=返还天赋点
+  apply: (p: Player) => void;
+}
+
+/** 灵根花费（沿用 ROOTS，cost 负=花费、正=返还）。 */
+export const ROOT_COSTS: Record<string, number> = {
+  天灵根: -14,
+  异灵根: -8,
+  双灵根: -4,
+  三灵根: 0,
+  四灵根: 3,
+  五灵根: 5,
+};
+
+/** 资质（→ aptitude 修炼倍率）。 */
+export const TALENT_APTITUDES: Talent[] = [
+  { name: '天纵之才', desc: '资质绝世，修炼 ×1.5。', cost: -8, apply: (p) => { p.aptitude = 1.5; } },
+  { name: '惊才绝艳', desc: '资质上上，修炼 ×1.4。', cost: -6, apply: (p) => { p.aptitude = 1.4; } },
+  { name: '资质上佳', desc: '资质优秀，修炼 ×1.25。', cost: -4, apply: (p) => { p.aptitude = 1.25; } },
+  { name: '中上之姿', desc: '略胜常人，修炼 ×1.12。', cost: -2, apply: (p) => { p.aptitude = 1.12; } },
+  { name: '中人之姿', desc: '资质寻常，修炼 ×1.0。', cost: 0, apply: (p) => { p.aptitude = 1.0; } },
+  { name: '资质平平', desc: '资质略逊，修炼 ×0.9。', cost: 2, apply: (p) => { p.aptitude = 0.9; } },
+  { name: '资质驽钝', desc: '资质驽钝，修炼 ×0.82。', cost: 5, apply: (p) => { p.aptitude = 0.82; } },
+  { name: '资质愚钝', desc: '资质愚钝，修炼 ×0.72。', cost: 8, apply: (p) => { p.aptitude = 0.72; } },
+  { name: '天生废柴', desc: '毫无资质，修炼 ×0.6。', cost: 12, apply: (p) => { p.aptitude = 0.6; } },
+];
+
+/** 先天体质（→ 气血 / 修炼 / 寿元 / 心境）。 */
+export const TALENT_BODIES: Talent[] = [
+  { name: '无特殊体质', desc: '凡胎俗骨，无甚特异。', cost: 0, apply: () => {} },
+  { name: '先天道体', desc: '天生近道，修炼 +10%。', cost: -3, apply: (p) => { p.aptitude *= 1.1; } },
+  { name: '神魔血脉', desc: '血脉磅礴，气血 +30。', cost: -5, apply: (p) => { p.maxHp += 30; } },
+  { name: '龙族血脉', desc: '真龙遗脉，气血 +15、寿元 +30。', cost: -7, apply: (p) => { p.maxHp += 15; p.lifespan += 30; } },
+  { name: '冰灵圣体', desc: '冰肌玉骨，气血 +10、心境 +5。', cost: -4, apply: (p) => { p.maxHp += 10; p.heart = Math.min(100, p.heart + 5); } },
+  { name: '混沌之体', desc: '混沌初开，修炼 +15%、气血 -10。', cost: -5, apply: (p) => { p.aptitude *= 1.15; p.maxHp -= 10; } },
+  { name: '纯阳之体', desc: '至阳之躯，心境 +10。', cost: -4, apply: (p) => { p.heart = Math.min(100, p.heart + 10); } },
+  { name: '玄阴绝脉', desc: '阴脉闭塞，修炼 -10%。', cost: 3, apply: (p) => { p.aptitude *= 0.9; } },
+  { name: '孱弱多病', desc: '体弱多病，气血 -15。', cost: 5, apply: (p) => { p.maxHp -= 15; } },
+  { name: '病入膏肓', desc: '沉疴缠身，气血 -30、寿元 -20。', cost: 9, apply: (p) => { p.maxHp -= 30; p.lifespan -= 20; } },
+];
+
+/** 儿时经历（→ 寿元 / 心境 / 气血 / 材料 / 修为）。 */
+export const TALENT_CHILDHOODS: Talent[] = [
+  { name: '无忧童年', desc: '平凡而安稳的童年。', cost: 0, apply: () => {} },
+  { name: '道心坚定', desc: '自幼向道，心境 +10。', cost: -2, apply: (p) => { p.heart = Math.min(100, p.heart + 10); } },
+  { name: '神奇温泉', desc: '幼年得温泉淬体，气血 +8。', cost: -2, apply: (p) => { p.maxHp += 8; } },
+  { name: '诗书启蒙', desc: '幼读经史，心境 +8。', cost: -2, apply: (p) => { p.heart = Math.min(100, p.heart + 8); } },
+  { name: '习武打熬', desc: '幼年起打熬筋骨，气血 +15。', cost: -3, apply: (p) => { p.maxHp += 15; } },
+  { name: '仙人指路', desc: '幼年得异人指点，修为 +15。', cost: -3, apply: (p) => { p.cultivation = Math.min(100, p.cultivation + 15); } },
+  { name: '神秘绿瓶', desc: '捡到一只绿瓶，可催熟灵药（灵草×3）。', cost: -2, apply: (p) => { p.materials['灵草'] = (p.materials['灵草'] ?? 0) + 3; } },
+  { name: '青梅竹马', desc: '有青梅竹马相伴，心境 +5。', cost: -1, apply: (p) => { p.heart = Math.min(100, p.heart + 5); } },
+  { name: '家道中落', desc: '幼年家道中落（灵石 -50、心境 +5）。', cost: 1, apply: (p) => { p.spirit = Math.max(0, p.spirit - 50); p.heart = Math.min(100, p.heart + 5); } },
+  { name: '逃荒饥寒', desc: '逃荒途中九死一生（气血 -5、心境 +10）。', cost: 3, apply: (p) => { p.maxHp -= 5; p.heart = Math.min(100, p.heart + 10); } },
+  { name: '大病一场', desc: '幼年重病，寿元 -15。', cost: 4, apply: (p) => { p.lifespan -= 15; } },
+];
+
+/** 青年经历（→ 功法熟练 / 神通 / 法宝 / 灵石 / 副业 / 心境）。 */
+export const TALENT_YOUTHS: Talent[] = [
+  { name: '平淡无奇', desc: '青年时代波澜不惊。', cost: 0, apply: () => {} },
+  { name: '初窥门径', desc: '早得仙缘，起始功法熟练度 +30。', cost: -3, apply: (p) => { p.techProficiency[p.technique] = Math.min(100, (p.techProficiency[p.technique] ?? 0) + 30); } },
+  { name: '后山奇遇', desc: '后山得宝，获松纹剑一柄。', cost: -4, apply: (p) => { if (p.treasure === '无') p.treasure = '松纹剑'; } },
+  { name: '得授神通', desc: '机缘之下习得一式神通（冰锥术）。', cost: -4, apply: (p) => { if (!p.spells.includes('冰锥术')) p.spells.push('冰锥术'); } },
+  { name: '游历四方', desc: '云游四海，灵石 +200、灵草 ×2。', cost: -4, apply: (p) => { p.spirit += 200; p.materials['灵草'] = (p.materials['灵草'] ?? 0) + 2; } },
+  { name: '拜入散修', desc: '曾得散修指点，通晓炼丹之术。', cost: -3, apply: (p) => { if (!p.skills.includes('炼丹')) p.skills.push('炼丹'); } },
+  { name: '商队历练', desc: '随商队跑商，灵石 +300。', cost: -3, apply: (p) => { p.spirit += 300; } },
+  { name: '潜心苦修', desc: '闭关苦修，修为 +20。', cost: -3, apply: (p) => { p.cultivation = Math.min(100, p.cultivation + 20); } },
+  { name: '轻功高手', desc: '身手矫健，气血 +5、灵石 +50。', cost: -2, apply: (p) => { p.maxHp += 5; p.spirit += 50; } },
+  { name: '卷入纷争', desc: '卷入江湖纷争（心境 -5、灵石 +150）。', cost: 1, apply: (p) => { p.heart = Math.max(0, p.heart - 5); p.spirit += 150; } },
+  { name: '情伤难愈', desc: '为情所伤（心境 -15、气血 +5）。', cost: 2, apply: (p) => { p.heart = Math.max(0, p.heart - 15); p.maxHp += 5; } },
+  { name: '惨遭退婚', desc: '遭人退婚，心境 -10。', cost: 2, apply: (p) => { p.heart = Math.max(0, p.heart - 10); } },
 ];
 
 // ---- 主线事件链（剧本专属，按年龄触发） ----
@@ -647,25 +722,26 @@ export interface OriginDef {
   hpBonus: number;
   heart: number;
   pill?: string;   // 开局赠送丹药
+  cost: number;    // 天赋点花费（负=花费、正=返还）
 }
 
 export const ORIGINS: OriginDef[] = [
-  { name: '山村孤儿', desc: '自幼孤苦，历尽冷暖，心智坚韧。', spirit: 0, technique: '基础吐纳术', hpBonus: 0, heart: 60 },
-  { name: '商贾之家', desc: '家财万贯，灵石富足。', spirit: 600, technique: '基础吐纳术', hpBonus: 0, heart: 50 },
-  { name: '修仙世家旁支', desc: '没落世家，祖传一卷功法。', spirit: 100, technique: '青灵诀', hpBonus: 0, heart: 55 },
-  { name: '猎户之子', desc: '自幼狩猎，体魄强健。', spirit: 50, technique: '基础吐纳术', hpBonus: 8, heart: 50 },
-  { name: '书香门第', desc: '诗书传家，悟性不俗，家藏凝气丹。', spirit: 80, technique: '基础吐纳术', hpBonus: 0, heart: 68, pill: '凝气丹' },
-  { name: '医家传人', desc: '悬壶济世，通晓药性，随身疗伤丹。', spirit: 60, technique: '基础吐纳术', hpBonus: 0, heart: 72, pill: '疗伤丹' },
-  { name: '没落贵族', desc: '家道中落，心有不甘，祖传青灵诀。', spirit: 150, technique: '青灵诀', hpBonus: 0, heart: 45 },
-  { name: '镖局之后', desc: '自幼习武，体魄过人。', spirit: 120, technique: '基础吐纳术', hpBonus: 12, heart: 50 },
-  { name: '山野牧童', desc: '放牛南山，心性纯良。', spirit: 30, technique: '基础吐纳术', hpBonus: 5, heart: 58 },
-  { name: '流民乞儿', desc: '阅尽人间冷暖，心智异常坚韧。', spirit: 0, technique: '基础吐纳术', hpBonus: -5, heart: 78 },
-  { name: '渔家子弟', desc: '江上渔家，水性极佳。', spirit: 40, technique: '基础吐纳术', hpBonus: 6, heart: 52 },
-  { name: '游方艺人之后', desc: '戏班杂耍出身，见多识广。', spirit: 60, technique: '基础吐纳术', hpBonus: 3, heart: 60 },
-  { name: '魔门弃婴', desc: '被魔宗长老捡回的弃婴，浸染魔气。', spirit: 100, technique: '基础吐纳术', hpBonus: 0, heart: 35 },
-  { name: '魔修之后', desc: '父母皆魔修，自幼修习魔功。', spirit: 150, technique: '基础吐纳术', hpBonus: 5, heart: 30 },
-  { name: '乱葬岗弃婴', desc: '生于乱葬岗，命格奇诡，阴气入体。', spirit: 0, technique: '基础吐纳术', hpBonus: -3, heart: 65 },
-  { name: '邪修养子', desc: '被邪修养大，通晓旁门左道。', spirit: 80, technique: '基础吐纳术', hpBonus: 2, heart: 40 },
+  { name: '山村孤儿', desc: '自幼孤苦，历尽冷暖，心智坚韧。', spirit: 0, technique: '基础吐纳术', hpBonus: 0, heart: 60, cost: 0 },
+  { name: '商贾之家', desc: '家财万贯，灵石富足。', spirit: 600, technique: '基础吐纳术', hpBonus: 0, heart: 50, cost: -6 },
+  { name: '修仙世家旁支', desc: '没落世家，祖传一卷功法。', spirit: 100, technique: '青灵诀', hpBonus: 0, heart: 55, cost: -6 },
+  { name: '猎户之子', desc: '自幼狩猎，体魄强健。', spirit: 50, technique: '基础吐纳术', hpBonus: 8, heart: 50, cost: -3 },
+  { name: '书香门第', desc: '诗书传家，悟性不俗，家藏凝气丹。', spirit: 80, technique: '基础吐纳术', hpBonus: 0, heart: 68, pill: '凝气丹', cost: -4 },
+  { name: '医家传人', desc: '悬壶济世，通晓药性，随身疗伤丹。', spirit: 60, technique: '基础吐纳术', hpBonus: 0, heart: 72, pill: '疗伤丹', cost: -3 },
+  { name: '没落贵族', desc: '家道中落，心有不甘，祖传青灵诀。', spirit: 150, technique: '青灵诀', hpBonus: 0, heart: 45, cost: -7 },
+  { name: '镖局之后', desc: '自幼习武，体魄过人。', spirit: 120, technique: '基础吐纳术', hpBonus: 12, heart: 50, cost: -4 },
+  { name: '山野牧童', desc: '放牛南山，心性纯良。', spirit: 30, technique: '基础吐纳术', hpBonus: 5, heart: 58, cost: -2 },
+  { name: '流民乞儿', desc: '阅尽人间冷暖，心智异常坚韧。', spirit: 0, technique: '基础吐纳术', hpBonus: -5, heart: 78, cost: 3 },
+  { name: '渔家子弟', desc: '江上渔家，水性极佳。', spirit: 40, technique: '基础吐纳术', hpBonus: 6, heart: 52, cost: -2 },
+  { name: '游方艺人之后', desc: '戏班杂耍出身，见多识广。', spirit: 60, technique: '基础吐纳术', hpBonus: 3, heart: 60, cost: -2 },
+  { name: '魔门弃婴', desc: '被魔宗长老捡回的弃婴，浸染魔气。', spirit: 100, technique: '基础吐纳术', hpBonus: 0, heart: 35, cost: -2 },
+  { name: '魔修之后', desc: '父母皆魔修，自幼修习魔功。', spirit: 150, technique: '基础吐纳术', hpBonus: 5, heart: 30, cost: 1 },
+  { name: '乱葬岗弃婴', desc: '生于乱葬岗，命格奇诡，阴气入体。', spirit: 0, technique: '基础吐纳术', hpBonus: -3, heart: 65, cost: 2 },
+  { name: '邪修养子', desc: '被邪修养大，通晓旁门左道。', spirit: 80, technique: '基础吐纳术', hpBonus: 2, heart: 40, cost: -1 },
 ];
 
 // ---- 宗门 ----
@@ -727,11 +803,7 @@ export interface ScenarioDef {
   name: string;
   tagline: string;       // 一句话定位
   intro: string[];       // 序章剧情（逐句旁白）
-  spirit: number;        // 额外灵石
-  heart: number;         // 额外心境
-  rootRolls: number;     // 灵根可重测次数（不含首次）
   hook: string;          // 专属开局伏笔
-  origins: string[];     // 剧本专属出身路线（对应 ORIGINS 名称）
 }
 
 export const SCENARIOS: ScenarioDef[] = [
@@ -742,9 +814,7 @@ export const SCENARIOS: ScenarioDef[] = [
       '旁人笑你痴心妄想，你却偏要以凡人之躯，叩问那九重仙门。',
       '命运待你凉薄，你便亲手撕了这命运。',
     ],
-    spirit: 0, heart: 15, rootRolls: 3,
     hook: '临行前，你在村口乱葬岗捡到一枚发热的骨片，隐隐似有天机……',
-    origins: ['山村孤儿', '猎户之子', '山野牧童', '流民乞儿'],
   },
   {
     name: '世家贵子', tagline: '出身豪门，恩怨缠身',
@@ -753,9 +823,7 @@ export const SCENARIOS: ScenarioDef[] = [
       '然树大招风，你那一门树敌无数，暗流早已涌动。',
       '锦衣玉食之下，是杀机四伏的豪门深院。',
     ],
-    spirit: 400, heart: 0, rootRolls: 1,
     hook: '离府那日，一封无名的血书被钉在门楣上：灭门之日，不远矣。',
-    origins: ['修仙世家旁支', '没落贵族', '书香门第', '商贾之家'],
   },
   {
     name: '逍遥浪子', tagline: '无牵无挂，四海为家',
@@ -764,9 +832,7 @@ export const SCENARIOS: ScenarioDef[] = [
       '走南闯北，见惯世态，却也因此广结善缘，机缘不断。',
       '江湖路远，你只信手中一柄剑、心中一口气。',
     ],
-    spirit: 200, heart: 5, rootRolls: 2,
     hook: '一日，你从旧货摊上淘到一张残破地图，标记着一处上古秘境……',
-    origins: ['镖局之后', '医家传人', '渔家子弟', '游方艺人之后'],
   },
   {
     name: '魔星降世', tagline: '魔门出身，杀伐问道',
@@ -775,9 +841,7 @@ export const SCENARIOS: ScenarioDef[] = [
       '体内一缕魔胎，令你天资妖孽，却也时时有入魔之危。',
       '正邪之辨、人魔之界，将是你毕生无法回避的劫。',
     ],
-    spirit: 200, heart: -10, rootRolls: 2,
     hook: '夜半，你体内魔胎忽而躁动，一个冰冷的声音在心底响起：杀，还是渡？',
-    origins: ['魔门弃婴', '魔修之后', '乱葬岗弃婴', '邪修养子'],
   },
 ];
 

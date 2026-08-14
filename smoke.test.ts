@@ -3,7 +3,7 @@
 
 import type { GameIO } from './src/io.js';
 import type { GameState, FemaleLead } from './src/types.js';
-import { ORIGINS, SECTS, REALMS, SCENARIOS, GOLDEN_FINGERS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, TREASURES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, techniqueSummary, upgradeTechnique } from './src/content.js';
+import { ORIGINS, SECTS, REALMS, SCENARIOS, ARCHETYPES, ROOT_COSTS, TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, TREASURES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, techniqueSummary, upgradeTechnique } from './src/content.js';
 import { createPlayer, rollRoot, makeLead } from './src/core/character.js';
 import { createCharacter } from './src/core/engine.js';
 import { maybeTriggerStory } from './src/core/storyline.js';
@@ -47,26 +47,28 @@ async function main() {
   console.log('· 灵根与开局数据');
   const root = rollRoot();
   assert(root.mult > 0 && root.name.length > 0, 'rollRoot 返回合法');
-  assert(ORIGINS.length === 16, '出身共 16 个（四剧本各 4 个）');
+  assert(ORIGINS.length >= 10, `出身至少 10 个（当前 ${ORIGINS.length}）`);
   assert(SCENARIOS.length === 4, '剧本共 4 个');
-  for (const s of SCENARIOS) {
-    assert(s.origins.length === 4, `剧本「${s.name}」有 4 条出身路线`);
-    assert(s.origins.every((n) => ORIGINS.some((o) => o.name === n)), `剧本「${s.name}」出身引用有效`);
-  }
-  assert(GOLDEN_FINGERS.length >= 3, '金手指至少 3 个');
+  assert(ARCHETYPES.length >= 3, `角色设定至少 3 个（当前 ${ARCHETYPES.length}）`);
+  assert(ARCHETYPES.every((a) => a.budget > 0 && a.cheatBonus >= 1), '角色设定预算与倍率合法');
+  assert(TALENT_APTITUDES.length >= 8, `资质至少 8 档（当前 ${TALENT_APTITUDES.length}）`);
+  assert(TALENT_BODIES.length >= 8, `先天体质至少 8 种（当前 ${TALENT_BODIES.length}）`);
+  assert(TALENT_CHILDHOODS.length >= 8, `儿时经历至少 8 种（当前 ${TALENT_CHILDHOODS.length}）`);
+  assert(TALENT_YOUTHS.length >= 8, `青年经历至少 8 种（当前 ${TALENT_YOUTHS.length}）`);
+  assert(Object.keys(ROOT_COSTS).length === 6, '六种灵根均有花费');
   assert(ORIGINS.some((o) => o.pill), '存在带赠丹的出身');
-  assert(GOLDEN_FINGERS.every((g) => g.cheatBonus > 1), '金手指修炼倍率合法');
   assert(Object.keys(TECHNIQUES).length >= 50, `功法库至少 50 门（当前 ${Object.keys(TECHNIQUES).length} 门）`);
   assert(SECTS.length >= 8, `宗门至少 8 个（当前 ${SECTS.length}）`);
 
-  console.log('· 开局流程（剧本→出身→灵根→金手指）');
+  console.log('· 开局流程（剧本→角色设定→天赋加点→宗门）');
   const fresh = await createCharacter(io);
   assert(fresh.player.name.length > 0, '开局角色姓名合法');
   assert(fresh.player.sect === SECTS[0].name, '默认选第一个宗门');
-  assert(fresh.player.goldenFinger !== null, '金手指已选定');
-  assert(fresh.player.cheatBonus > 1, '金手指修炼加成已生效');
+  assert(fresh.player.cheatBonus >= 1, '角色设定修炼倍率已生效');
+  assert(fresh.player.aptitude === 1.0, '默认资质 ×1.0');
+  assert(fresh.player.root === '三灵根', '默认灵根三灵根');
 
-  io.queue = ['', '1', '1', '9']; // 姓名/剧本/出身默认，宗门选第 9 个（血煞魔宗）
+  io.queue = ['', '1', '1', '0', '9']; // 姓名/剧本/角色设定默认 → 加点完成 → 宗门第 9 个（血煞魔宗）
   const magicFresh = await createCharacter(io);
   assert(magicFresh.player.sect === '血煞魔宗', '开局可拜入魔道宗门（全门派可选）');
 
