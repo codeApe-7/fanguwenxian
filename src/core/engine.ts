@@ -34,10 +34,17 @@ export async function intro(io: GameIO): Promise<'1' | '2' | '3'> {
   io.print();
   io.print(bold('《凡骨问仙》· 终端文字冒险'));
   io.print(dim('─'.repeat(W)));
-  io.print(' 1) 开始新游戏');
-  io.print(hasSave() ? ' 2) 继续存档' : ' 2) 继续存档（无存档）');
-  io.print(' 3) 退出');
-  return (await io.ask('选择：', ['1', '2', '3'], '1')) as '1' | '2' | '3';
+  while (true) {
+    io.print(' 1) 开始新游戏');
+    io.print(hasSave() ? ' 2) 继续存档' : ' 2) 继续存档（无存档）');
+    io.print(' 3) 退出');
+    const ch = await io.ask('选择：', ['1', '2', '3'], '1');
+    if (ch === '2' && !hasSave()) {
+      io.print(red('当前没有可继续的存档，请先开始新游戏。'));
+      continue;
+    }
+    return ch as '1' | '2' | '3';
+  }
 }
 
 export async function createCharacter(io: GameIO): Promise<GameState> {
@@ -282,13 +289,15 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
     const prof = p.techProficiency[p.technique] ?? 0;
     io.print(blue('═══ 闭关 ═══'));
     io.print(`当前功法：《${p.technique}》 ${techLevelName(p)}（熟练 ${prof}/100）`);
+    if ((p.spiritWarm ?? 0) > 0) io.print(yellow(`灵石温养：剩余 ${p.spiritWarm} 年（闭关 +20%）`));
     io.print(' 1) 闭关 1 年    2) 闭关 3 年');
     io.print(' 3) 闭关 5 年    4) 闭关 10 年');
     io.print(' 5) 参悟功法（熟练度 +15，耗时 1 年）');
     io.print(' 6) 参悟残篇');
     io.print(' 7) 切换主修功法');
+    io.print(' 8) 灵石温养（50 灵石 → 闭关 +20% ×5 年）');
     io.print(' 0) 返回');
-    const ch = await io.ask('选择：', ['0', '1', '2', '3', '4', '5', '6', '7'], '1');
+    const ch = await io.ask('选择：', ['0', '1', '2', '3', '4', '5', '6', '7', '8'], '1');
     if (ch === '0' || ch === '') return { years: 0, cultivate: 0 };
     if (ch === '1' || ch === '2' || ch === '3' || ch === '4') {
       const years = [1, 3, 5, 10][parseInt(ch, 10) - 1];
@@ -305,6 +314,16 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
     }
     if (ch === '7') {
       await switchMenu(state, io);
+      continue;
+    }
+    if (ch === '8') {
+      if (p.spirit < 50) {
+        io.print(red(`灵石不足（需 50，当前 ${p.spirit}）。`));
+        continue;
+      }
+      p.spirit -= 50;
+      p.spiritWarm = (p.spiritWarm ?? 0) + 5;
+      io.print(green(`你取灵石布下温养法阵，未来 ${p.spiritWarm} 年闭关效率 +20%。`));
       continue;
     }
     if (await comprehendFragments(state, io)) return { years: 1, cultivate: 0 };

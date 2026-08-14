@@ -13,14 +13,14 @@ export interface RealmDef {
 
 export const REALMS: RealmDef[] = [
   { name: '炼气期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 100, difficulty: 1.0, breakPill: '筑基丹' },
-  { name: '筑基期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 200, difficulty: 0.7, breakPill: '结丹丹' },
-  { name: '结丹期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 500, difficulty: 0.5, breakPill: '婴变丹' },
-  { name: '元婴期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 1000, difficulty: 0.35, breakPill: '化神丹' },
-  { name: '化神期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 2000, difficulty: 0.25, breakPill: '炼虚丹' },
-  { name: '炼虚期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 5000, difficulty: 0.18, breakPill: '合体丹' },
-  { name: '合体期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 10000, difficulty: 0.12, breakPill: '大乘丹' },
-  { name: '大乘期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 20000, difficulty: 0.08, breakPill: '渡劫丹' },
-  { name: '渡劫期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 50000, difficulty: 0.05, breakPill: null },
+  { name: '筑基期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 200, difficulty: 0.8, breakPill: '结丹丹' },
+  { name: '结丹期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 500, difficulty: 0.6, breakPill: '婴变丹' },
+  { name: '元婴期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 1000, difficulty: 0.45, breakPill: '化神丹' },
+  { name: '化神期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 2000, difficulty: 0.34, breakPill: '炼虚丹' },
+  { name: '炼虚期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 5000, difficulty: 0.25, breakPill: '合体丹' },
+  { name: '合体期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 10000, difficulty: 0.18, breakPill: '大乘丹' },
+  { name: '大乘期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 20000, difficulty: 0.13, breakPill: '渡劫丹' },
+  { name: '渡劫期', stages: ['初期', '中期', '后期', '大圆满'], lifespan: 50000, difficulty: 0.1, breakPill: null },
 ];
 
 // ---- 灵根 ----
@@ -32,11 +32,11 @@ export interface RootDef {
 
 export const ROOTS: RootDef[] = [
   { name: '天灵根', mult: 5.0, prob: 0.02 },
-  { name: '异灵根', mult: 3.5, prob: 0.05 },
-  { name: '双灵根', mult: 2.0, prob: 0.13 },
-  { name: '三灵根', mult: 1.2, prob: 0.25 },
-  { name: '四灵根', mult: 0.7, prob: 0.30 },
-  { name: '五灵根', mult: 0.4, prob: 0.25 },
+  { name: '异灵根', mult: 3.0, prob: 0.05 },
+  { name: '双灵根', mult: 1.8, prob: 0.13 },
+  { name: '三灵根', mult: 1.0, prob: 0.25 },
+  { name: '四灵根', mult: 0.6, prob: 0.30 },
+  { name: '五灵根', mult: 0.5, prob: 0.25 },
 ];
 
 // ---- 修炼功法 ----
@@ -64,7 +64,7 @@ export const TECHNIQUES: Record<string, TechniqueDef> = {
   铁骨功: { mult: 1.1, hp: 30, spells: ['战意诀'], desc: '锻骨如铁，气血悠长。' },
   龟息诀: { mult: 1.0, lifespan: 15, spells: ['敛息术'], desc: '龟息吐纳，延年益寿。' },
   养生诀: { mult: 1.1, lifespan: 10, spells: ['甘霖咒'], desc: '调和阴阳，颐养天年。' },
-  御风诀: { mult: 1.2, atk: 5, spells: ['疾风斩'], desc: '身法御风，疾如流影。' },
+  御风诀: { mult: 1.2, atk: 5, spells: ['疾风斩', '土遁术'], desc: '身法御风，疾如流影。' },
   烈阳掌: { mult: 1.2, atk: 8, spells: ['火球术'], desc: '至阳掌力，焚金裂石。' },
   玄冥劲: { mult: 1.2, atk: 8, spells: ['冰封千里'], desc: '阴寒劲力，透骨伤髓。' },
   狂雷劲: { mult: 1.25, atk: 10, spells: ['掌心雷'], desc: '雷霆劲力，刚猛无俦。' },
@@ -156,7 +156,7 @@ export const TECH_ORDER = ['基础吐纳术', '青灵诀', '玄霜诀', '紫薇�
 export function techniqueSummary(name: string): string {
   const d = TECHNIQUES[name];
   if (!d) return '';
-  const tier = ['', '灵品·', '仙品·'][d.tier ?? 1];
+  const tier = ['', '', '灵品·', '仙品·'][d.tier ?? 1];
   const parts = [`修炼×${d.mult}`];
   if (d.atk) parts.push(`攻击+${d.atk}`);
   if (d.hp) parts.push(`气血+${d.hp}`);
@@ -185,6 +185,15 @@ export function switchTechnique(p: Player, name: string): boolean {
   if (!(name in (p.techProficiency ?? {}))) return false;
   p.technique = name;
   return true;
+}
+
+/** 主修功法提升一阶（按 TECH_ORDER），返回新功法名（已最高则 null）。 */
+export function upgradeTechnique(p: Player): string | null {
+  const cur = TECHNIQUES[p.technique]?.mult ?? 1;
+  const next = TECH_ORDER.find((n) => (TECHNIQUES[n]?.mult ?? 0) > cur);
+  if (!next) return null;
+  learnTechnique(p, next);
+  return next;
 }
 
 // ---- 功法熟练度（入门 → 小成 → 大成 → 圆满） ----
@@ -228,8 +237,8 @@ export interface PillDef {
 }
 
 export const PILLS: Record<string, PillDef> = {
-  凝气丹: { type: 'xiu', value: 10, price: 30 },
-  聚灵丹: { type: 'xiu', value: 25, price: 80 },
+  凝气丹: { type: 'xiu', value: 40, price: 30 },
+  聚灵丹: { type: 'xiu', value: 80, price: 80 },
   疗伤丹: { type: 'heal', value: 40, price: 20 },
   回春丹: { type: 'heal', value: 100, price: 60 },
   净元丹: { type: 'detox', value: 30, price: 120 },
@@ -237,10 +246,10 @@ export const PILLS: Record<string, PillDef> = {
   结丹丹: { type: 'break', value: 0, price: 600 },
   婴变丹: { type: 'break', value: 0, price: 1500 },
   化神丹: { type: 'break', value: 0, price: 4000 },
-  炼虚丹: { type: 'break', value: 0, price: 10000 },
-  合体丹: { type: 'break', value: 0, price: 30000 },
-  大乘丹: { type: 'break', value: 0, price: 80000 },
-  渡劫丹: { type: 'break', value: 0, price: 200000 },
+  炼虚丹: { type: 'break', value: 0, price: 8000 },
+  合体丹: { type: 'break', value: 0, price: 15000 },
+  大乘丹: { type: 'break', value: 0, price: 25000 },
+  渡劫丹: { type: 'break', value: 0, price: 50000 },
 };
 
 /** 丹毒对修炼效率的惩罚倍率（30/60/90 三档阈值，无丹毒为 1）。 */

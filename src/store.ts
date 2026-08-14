@@ -1,16 +1,17 @@
 // 存档持久化适配层（Node 文件系统）。
 // 迁移网页时替换本模块为 localStorage 即可，其余代码不变。
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { GameIO } from './io.js';
 import type { GameState } from './types.js';
 import { REALMS } from './content.js';
 import { green, red } from './colors.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SAVE_FILE = join(__dirname, '..', 'savegame.json');
+// 存档写入用户主目录，避免落在包安装目录（npx/全局安装下不稳定且易被覆盖）。
+const SAVE_DIR = join(homedir(), '.fangu-wenxian');
+const SAVE_FILE = join(SAVE_DIR, 'savegame.json');
 
 export function hasSave(): boolean {
   return existsSync(SAVE_FILE);
@@ -18,6 +19,7 @@ export function hasSave(): boolean {
 
 export function saveGame(state: GameState, io: GameIO): void {
   try {
+    mkdirSync(SAVE_DIR, { recursive: true });
     writeFileSync(SAVE_FILE, JSON.stringify(state, null, 2), 'utf-8');
     io.print(green('存档成功！'));
   } catch (e) {

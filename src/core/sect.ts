@@ -2,7 +2,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { SECTS, REALMS, TECHNIQUES, TECH_ORDER, PILLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, SECT_RANK_REALM, learnTechnique, techniqueSummary, playerTitle } from '../content.js';
+import { SECTS, REALMS, TECHNIQUES, PILLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, SECT_RANK_REALM, learnTechnique, upgradeTechnique, techniqueSummary, playerTitle } from '../content.js';
 import type { SectDef } from '../content.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick, chance, randint } from './rng.js';
@@ -203,6 +203,12 @@ const PILL_SHOP: Array<[string, number]> = [
   ['净元丹', 40],
   ['筑基丹', 50],
   ['结丹丹', 150],
+  ['婴变丹', 400],
+  ['化神丹', 1000],
+  ['炼虚丹', 2000],
+  ['合体丹', 3800],
+  ['大乘丹', 6000],
+  ['渡劫丹', 12000],
 ];
 const MAT_SHOP: Array<[string, number]> = [
   ['灵草', 5],
@@ -275,15 +281,6 @@ async function treasury(state: GameState, io: GameIO): Promise<void> {
 
 // ---- 宗门大比 / 宗主之位 / 宗门战争 ----
 
-/** 主修功法提升一阶（按 TECH_ORDER），已最高则 null。 */
-function upgradeTechnique(p: Player): string | null {
-  const cur = TECHNIQUES[p.technique]?.mult ?? 1;
-  const next = TECH_ORDER.find((n) => (TECHNIQUES[n]?.mult ?? 0) > cur);
-  if (!next) return null;
-  learnTechnique(p, next);
-  return next;
-}
-
 /** 参加宗门大比（每 3 年一届，内门以上可参赛，三轮积分赛）。 */
 async function tourney(state: GameState, io: GameIO): Promise<boolean> {
   const p = state.player;
@@ -347,7 +344,7 @@ async function challengeMaster(state: GameState, io: GameIO): Promise<boolean> {
     p.sectMaster = true;
     const legacy = upgradeTechnique(p);
     await io.narrate(green('你击败现任宗主，继承宗主之位！'));
-    if (legacy) await io.narrate(green(`宗门传承灌顶，你得镇宗功法《${legacy}》（可于「闭关·切换主修」中启用）！`));
+    if (legacy) await io.narrate(green(`宗门传承灌顶，你得传承功法《${legacy}》（可于「闭关·切换主修」中启用）！`));
     await io.narrate(green(`此后每年可领俸禄 ${MASTER_SALARY} 灵石，宗门宝库免单，并可发动宗门战争。`));
   } else {
     await io.narrate(red('你败在宗主手下，继位失败。'));
@@ -394,7 +391,7 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
     const t = upgradeTechnique(p);
     await io.narrate(green(`大胜！你攻破 ${target.name}，掠夺灵石 ${loot}、妖兽内丹×2，贡献 +100。`));
     if (t) {
-      await io.narrate(green(`并从其藏经阁夺得主修功法《${t}》（可于「闭关·切换主修」中启用）！`));
+      await io.narrate(green(`并从其藏经阁夺得功法《${t}》（可于「闭关·切换主修」中启用）！`));
     } else {
       await io.narrate(green('其藏经阁中功法皆不如你所学，尽数变卖。'));
     }

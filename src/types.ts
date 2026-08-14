@@ -24,6 +24,7 @@ export interface Player {
   age: number;
   lifespan: number;
   spirit: number;        // 灵石
+  spiritWarm: number;    // 灵石温养剩余年数（>0 时闭关修炼效率 +20%）
   technique: string;     // 修炼功法
   treasure: string;      // 法宝
   maxHp: number;

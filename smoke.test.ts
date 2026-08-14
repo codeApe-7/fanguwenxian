@@ -3,7 +3,7 @@
 
 import type { GameIO } from './src/io.js';
 import type { GameState, FemaleLead } from './src/types.js';
-import { ORIGINS, SECTS, REALMS, SCENARIOS, GOLDEN_FINGERS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerTitle } from './src/content.js';
+import { ORIGINS, SECTS, REALMS, SCENARIOS, GOLDEN_FINGERS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerTitle, techniqueSummary, upgradeTechnique } from './src/content.js';
 import { createPlayer, rollRoot, makeLead } from './src/core/character.js';
 import { createCharacter } from './src/core/engine.js';
 import { maybeTriggerStory } from './src/core/storyline.js';
@@ -197,6 +197,16 @@ async function main() {
   assert(g > 0, 'cultivate 修为增长为正');
   assert(p.cultivation >= 0 && p.cultivation <= 100, 'cultivation 在 [0,100]');
 
+  console.log('· 灵石温养（灵石换修炼加速）');
+  const warmP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  warmP.cultivation = 0;
+  const gBase = cultivate(warmP);
+  warmP.cultivation = 0;
+  warmP.spiritWarm = 5;
+  const gWarm = cultivate(warmP);
+  assert(gWarm > gBase, '灵石温养提高修炼效率');
+  assert((warmP.spiritWarm ?? 0) === 4, '温养年限随闭关逐年递减');
+
   console.log('· 功法熟练度与残篇');
   const profP = createPlayer('测试', ORIGINS[0], SECTS[0]);
   const profBefore = profP.techProficiency['基础吐纳术'] ?? 0;
@@ -229,6 +239,17 @@ async function main() {
   assert(spellP.spells.includes('回春术'), '修习青灵诀习得回春术');
   learnTechnique(spellP, '青霄剑诀');
   assert(spellP.spells.includes('御剑术') && spellP.spells.includes('剑气纵横'), '镇宗功法附带双神通');
+
+  console.log('· 功法品阶显示与主修升级');
+  assert(!techniqueSummary('基础吐纳术').includes('灵品') && !techniqueSummary('基础吐纳术').includes('undefined'), '凡品功法无误标品阶');
+  assert(techniqueSummary('青霄剑诀').startsWith('灵品·'), '灵品功法显示「灵品·」');
+  assert(techniqueSummary('太虚引星诀').startsWith('仙品·'), '仙品功法显示「仙品·」');
+  assert(!techniqueSummary('太虚引星诀').includes('undefined'), '仙品功法无 undefined');
+  const upP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  assert(upgradeTechnique(upP) === '青灵诀', '主修功法按 TECH_ORDER 升级');
+  assert((upP.techProficiency['青灵诀'] ?? -1) >= 0, '升级功法入库');
+  learnTechnique(spellP, '御风诀');
+  assert(spellP.spells.includes('土遁术'), '御风诀附带土遁术（逃脱神通可达）');
 
   console.log('· 战斗神通');
   const cspellP = createPlayer('测试', ORIGINS[0], SECTS[0]);
@@ -302,7 +323,7 @@ async function main() {
   await takePill(pillP, io);
   io.answer = null;
   assert(pillP.pills['凝气丹'] === 2, '修为丹可正常服用');
-  assert(pillP.cultivation === 10, '炼气期凝气丹 +10 修为');
+  assert(pillP.cultivation === 40, '炼气期凝气丹 +40 修为');
 
   console.log('· 丹毒系统');
   const toxP = createPlayer('测试', ORIGINS[0], SECTS[0]);
@@ -311,7 +332,7 @@ async function main() {
   io.answer = '1';
   await takePill(toxP, io);
   io.answer = null;
-  assert(toxP.pillToxin === 2, '服修为丹累积丹毒（20% 修为量）');
+  assert(toxP.pillToxin === 8, '服修为丹累积丹毒（20% 修为量）');
   toxP.pills['凝气丹'] = 0;
   toxP.pillToxin = 50;
   toxP.pills['净元丹'] = 1;

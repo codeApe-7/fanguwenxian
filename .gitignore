@@ -3,3 +3,4 @@ dist/
 savegame.json
 
 .idea/
+.DS_Store

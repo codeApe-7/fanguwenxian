@@ -56,7 +56,10 @@ export async function combat(
   while (php > 0 && ehp > 0) {
     io.print(dim(`—— 第 ${turn} 回合 ——`));
     io.print(`你：气血 ${php}/${playerHp(p)}    敌人 ${enemy.name}：气血 ${Math.max(0, ehp)}`);
-    const choice = await io.ask('选择行动：1)攻击 2)法宝 3)疗伤 4)符箓 5)逃跑 6)神通', ['1', '2', '3', '4', '5', '6'], '1');
+    const hasSpell = (p.spells ?? []).length > 0;
+    const prompt = `选择行动：1)攻击 2)法宝 3)疗伤 4)符箓 5)逃跑${hasSpell ? ' 6)神通' : ''}`;
+    const choices = hasSpell ? ['1', '2', '3', '4', '5', '6'] : ['1', '2', '3', '4', '5'];
+    const choice = await io.ask(prompt, choices, '1');
 
     if (choice === '1') {
       const dmg = Math.max(1, playerAttack(p) + buffAtk - enemy.def + randint(-3, 3));

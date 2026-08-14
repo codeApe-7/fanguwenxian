@@ -25,6 +25,11 @@ export function cultivate(p: Player): number {
     gain += TALISMANS['聚灵符'].value;
   }
   gain *= toxinPenalty(p); // 丹毒影响修炼效率
+  // 灵石温养：剩余年数内闭关效率 +20%
+  if ((p.spiritWarm ?? 0) > 0) {
+    gain *= 1.2;
+    p.spiritWarm -= 1;
+  }
   gain = Math.max(1, gain);
   p.cultivation = Math.min(100, p.cultivation + gain);
   // 修行中打磨功法熟练度
@@ -135,6 +140,8 @@ export async function breakthrough(p: Player, leads: FemaleLead[], io: GameIO): 
       rate -= 0.2;
     }
   }
+
+  rate = Math.max(0.01, Math.min(1, rate)); // 丹药/灵根等修正后仍应在 (0,1] 内，避免负成功率卡死或超 100%
 
   await io.narrate(`你盘膝而坐，凝神聚气，冲击 ${green(playerTitle(p))} 的瓶颈……`);
   await io.narrate(`突破成功率：${yellow(`${(rate * 100).toFixed(0)}%`)}`);

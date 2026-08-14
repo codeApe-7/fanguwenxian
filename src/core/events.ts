@@ -3,7 +3,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { MATERIALS, TREASURES, TECH_ORDER, TECHNIQUES, REALMS, ROOTS, sectOf, sectPower, learnTechnique, playerTitle } from '../content.js';
+import { MATERIALS, TREASURES, TECHNIQUES, REALMS, ROOTS, sectOf, sectPower, upgradeTechnique, playerTitle } from '../content.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick, chance, randint } from './rng.js';
 import { makeLead } from './character.js';
@@ -33,7 +33,7 @@ function addMat(p: Player, name: string, n = 1): void {
 }
 
 function addCult(p: Player, n: number): void {
-  p.cultivation = Math.min(100, p.cultivation + n);
+  p.cultivation = Math.max(0, Math.min(100, p.cultivation + n));
 }
 
 function addHeart(p: Player, n: number): void {
@@ -59,15 +59,6 @@ function advanceStage(p: Player): void {
   }
   p.cultivation = 0;
   p.heart = Math.min(100, p.heart + 5);
-}
-
-/** 主修功法提升一阶（按 TECH_ORDER），返回新功法名（已最高则 null）。 */
-function upgradeTechnique(p: Player): string | null {
-  const cur = TECHNIQUES[p.technique]?.mult ?? 1;
-  const next = TECH_ORDER.find((n) => (TECHNIQUES[n]?.mult ?? 0) > cur);
-  if (!next) return null;
-  learnTechnique(p, next);
-  return next;
 }
 
 /** 灵根提升一级，返回新灵根名（已天灵根则 null）。 */
