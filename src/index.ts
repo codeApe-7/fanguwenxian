@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // 入口：装配终端 IO 与游戏引擎。
 
 import { TerminalIO } from './terminal.js';

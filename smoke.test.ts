@@ -2,8 +2,8 @@
 // 运行：npm test
 
 import type { GameIO } from './src/io.js';
-import type { GameState } from './src/types.js';
-import { ORIGINS, SECTS, REALMS, SCENARIOS, GOLDEN_FINGERS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, learnTechnique, techLevelName, toxinPenalty, playerAttack, playerTitle } from './src/content.js';
+import type { GameState, FemaleLead } from './src/types.js';
+import { ORIGINS, SECTS, REALMS, SCENARIOS, GOLDEN_FINGERS, SKILLS, STORYLINES, SCENARIO_HEROINES, PERSONALITY_MODS, TECHNIQUES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerTitle } from './src/content.js';
 import { createPlayer, rollRoot, makeLead } from './src/core/character.js';
 import { createCharacter } from './src/core/engine.js';
 import { maybeTriggerStory } from './src/core/storyline.js';
@@ -14,7 +14,7 @@ import { explore } from './src/core/explore.js';
 import { EVENTS } from './src/core/events.js';
 import { market } from './src/core/market.js';
 import { alchemy, forge, formation, talisman } from './src/core/crafts.js';
-import { romance, leadDescription } from './src/core/romance.js';
+import { romance, leadDescription, advanceLeads } from './src/core/romance.js';
 
 class MockIO implements GameIO {
   answer: string | null = null;
@@ -114,7 +114,11 @@ async function main() {
   await sectMenu(sectState, io);
   assert(sectP.sectContribution === 100, '捐献灵石获得贡献');
   assert(sectP.spirit === 700, '捐献扣除灵石');
-  io.queue = ['3', 'y']; // 晋升考核（贡献已足）→ 挑战守关师兄
+  io.queue = ['3']; // 修为不足（炼气）→ 晋升被拒
+  await sectMenu(sectState, io);
+  assert(sectP.sectRank === 0 && sectP.sectContribution === 100, '修为不足不得晋升');
+  sectP.realmIdx = 2; // 结丹
+  io.queue = ['3', 'y']; // 晋升考核 → 挑战守关师兄
   await sectMenu(sectState, io);
   assert([0, 1].includes(sectP.sectRank), '晋升考核可执行');
   assert(sectP.sectContribution === 100 || sectP.sectContribution === 0, '晋升后贡献结算合理');
@@ -172,18 +176,21 @@ async function main() {
   const shopState: GameState = { player: shopP, leads: [] };
   io.queue = ['7', '1', '1', '0']; // 宝库 → 藏经阁 → 第1个（镇宗功法 青木养气诀）
   await sectMenu(shopState, io);
-  assert(shopP.technique === '青木养气诀', '藏经阁可兑换镇宗功法');
+  assert(shopP.technique === '基础吐纳术', '购功不自动改修');
+  assert((shopP.techProficiency['青木养气诀'] ?? -1) >= 0, '购得功法入库');
   assert(shopP.sectContribution === 400, '镇宗功法扣 600 贡献');
   assert(shopP.lifespan === 115, '养寿功法寿元 +15');
   io.queue = ['7', '1', '2', '0']; // 第2个（青灵诀 50）
   await sectMenu(shopState, io);
-  assert(shopP.technique === '青灵诀', '藏经阁兑换通用功法');
+  assert((shopP.techProficiency['青灵诀'] ?? -1) >= 0, '藏经阁兑换通用功法入库');
   assert(shopP.sectContribution === 350, '通用功法扣 50 贡献');
   shopP.sectMaster = true;
   io.queue = ['7', '1', '3', '0']; // 第3个（玄霜诀）宗主免单
   await sectMenu(shopState, io);
-  assert(shopP.technique === '玄霜诀', '宗主宝库免单兑换功法');
+  assert((shopP.techProficiency['玄霜诀'] ?? -1) >= 0, '宗主宝库免单兑换功法');
   assert(shopP.sectContribution === 350, '宗主兑换不扣贡献');
+  assert(switchTechnique(shopP, '青木养气诀') === true, '可手动切换主修');
+  assert(shopP.technique === '青木养气诀', '切换主修成功');
 
   console.log('· 修炼');
   const g = cultivate(p);
@@ -206,8 +213,10 @@ async function main() {
   io.queue = ['1'];
   const comprehended = await comprehendFragments(fragState, io);
   assert(comprehended === true, '残篇参悟补全功法');
-  assert(fragP.technique === '玄霜诀', '残篇补全后改修该功法');
+  assert(fragP.technique === '基础吐纳术', '补全功法不自动改修');
   assert((fragP.techProficiency['玄霜诀'] ?? 0) === 30, '补全功法熟练度 30（小成）');
+  assert(switchTechnique(fragP, '玄霜诀') === true, '可手动切换主修');
+  assert(fragP.technique === '玄霜诀', '切换主修成功');
   fragP.fragments['无名残篇'] = 1;
   io.queue = ['1'];
   await comprehendFragments(fragState, io);
@@ -315,12 +324,25 @@ async function main() {
   assert(lead.name.length >= 2, '女主姓名合法');
   assert(leadDescription(lead).includes(lead.name), '女主描述包含姓名');
 
-  console.log('· 渡劫飞升（有渡劫丹必成功）');
+  console.log('· 红颜修为成长');
+  const growLead = makeLead(p);
+  const growLeads: FemaleLead[] = [growLead];
+  for (let i = 0; i < 50; i++) advanceLeads(growLeads, REALMS.length - 2);
+  assert(
+    growLead.realm === REALMS[growLead.realmIdx].name + REALMS[growLead.realmIdx].stages[growLead.stageIdx],
+    '红颜境界字符串与下标一致',
+  );
+  assert(growLead.realmIdx <= REALMS.length - 2, '红颜境界不越界');
+
+  console.log('· 渡劫飞升（有渡劫丹与道侣共渡必成功）');
   p.realmIdx = REALMS.length - 1;
   p.stageIdx = REALMS[p.realmIdx].stages.length - 1;
   p.pills['渡劫丹'] = 1;
-  const won = await ascend(p, io);
-  assert(won === true, '持渡劫丹飞升应成功');
+  const daoLead = makeLead(p);
+  daoLead.dao = true;
+  p.daoCompanion = daoLead.name;
+  const won = await ascend(p, [daoLead], io);
+  assert(won === true, '持渡劫丹与道侣共渡，飞升应成功');
 
   if (failures === 0) {
     console.log('\n✅ 全部通过（最终境界：' + playerTitle(p) + '）');

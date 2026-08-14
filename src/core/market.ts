@@ -139,7 +139,7 @@ async function shopTechniques(p: Player, io: GameIO): Promise<void> {
     }
     p.spirit -= price;
     learnTechnique(p, name);
-    io.print(green(`你改修 ${name}！`));
+    io.print(green(`你购得 ${name}！（可在「闭关·切换主修」中启用）`));
   }
 }
 

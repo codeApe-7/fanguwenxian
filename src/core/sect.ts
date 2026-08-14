@@ -2,7 +2,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { SECTS, REALMS, TECHNIQUES, TECH_ORDER, PILLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, learnTechnique, techniqueSummary } from '../content.js';
+import { SECTS, REALMS, TECHNIQUES, TECH_ORDER, PILLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, SECT_RANK_REALM, learnTechnique, techniqueSummary, playerTitle } from '../content.js';
 import type { SectDef } from '../content.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick, chance, randint } from './rng.js';
@@ -122,6 +122,10 @@ async function tryPromote(state: GameState, io: GameIO): Promise<boolean> {
   }
   const next = rank + 1;
   const need = SECT_RANK_NEED[next];
+  if (p.realmIdx < SECT_RANK_REALM[next]) {
+    io.print(red(`修为不足（晋升${SECT_RANKS[next]}需 ${REALMS[SECT_RANK_REALM[next]].name} 以上，你当前 ${playerTitle(p)}）。`));
+    return false;
+  }
   if ((p.sectContribution ?? 0) < need) {
     io.print(red(`贡献不足（晋升${SECT_RANKS[next]}需 ${need} 贡献，当前 ${p.sectContribution}）。`));
     return false;
@@ -343,7 +347,7 @@ async function challengeMaster(state: GameState, io: GameIO): Promise<boolean> {
     p.sectMaster = true;
     const legacy = upgradeTechnique(p);
     await io.narrate(green('你击败现任宗主，继承宗主之位！'));
-    if (legacy) await io.narrate(green(`宗门传承灌顶，你得镇宗功法《${legacy}》！`));
+    if (legacy) await io.narrate(green(`宗门传承灌顶，你得镇宗功法《${legacy}》（可于「闭关·切换主修」中启用）！`));
     await io.narrate(green(`此后每年可领俸禄 ${MASTER_SALARY} 灵石，宗门宝库免单，并可发动宗门战争。`));
   } else {
     await io.narrate(red('你败在宗主手下，继位失败。'));
@@ -390,7 +394,7 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
     const t = upgradeTechnique(p);
     await io.narrate(green(`大胜！你攻破 ${target.name}，掠夺灵石 ${loot}、妖兽内丹×2，贡献 +100。`));
     if (t) {
-      await io.narrate(green(`并从其藏经阁夺得主修功法《${t}》！`));
+      await io.narrate(green(`并从其藏经阁夺得主修功法《${t}》（可于「闭关·切换主修」中启用）！`));
     } else {
       await io.narrate(green('其藏经阁中功法皆不如你所学，尽数变卖。'));
     }
@@ -528,7 +532,9 @@ export async function sectMenu(state: GameState, io: GameIO): Promise<boolean> {
     if (!isFree) {
       const rank = rankOf(p);
       const maxRank = rank >= SECT_RANKS.length - 1;
-      const prog = maxRank ? '' : `（晋升还需 ${SECT_RANK_NEED[rank + 1] - (p.sectContribution ?? 0)} 贡献）`;
+      const prog = maxRank
+        ? ''
+        : `（晋升还需：贡献 ${SECT_RANK_NEED[rank + 1]}，${REALMS[SECT_RANK_REALM[rank + 1]].name}以上）`;
       const masterTag = p.sectMaster ? '（宗主）' : '';
       io.print(`职阶：${SECT_RANKS[rank]}${masterTag}    贡献：${p.sectContribution ?? 0}${prog}`);
     }

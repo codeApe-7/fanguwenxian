@@ -80,7 +80,7 @@ export async function comprehendFragments(state: GameState, io: GameIO): Promise
     } else {
       learnTechnique(p, name);
       p.techProficiency[name] = 30; // 补全即小成
-      await io.narrate(green(`你参悟《${name}》残篇，补全整部功法！自此改修此功（熟练度 30，小成）。`));
+      await io.narrate(green(`你参悟《${name}》残篇，补全整部功法（熟练度 30，小成）！可于「闭关·切换主修」中启用。`));
     }
     return true;
   }
@@ -237,19 +237,22 @@ export async function takePill(p: Player, io: GameIO): Promise<void> {
 }
 
 /** 渡劫飞升结局，返回是否成仙。 */
-export async function ascend(p: Player, io: GameIO): Promise<boolean> {
+export async function ascend(p: Player, leads: FemaleLead[], io: GameIO): Promise<boolean> {
   await io.clear();
   await io.narrate('渡劫期大圆满，九天之上，雷云翻涌。');
   await io.narrate('你立于孤峰之巅，直面那传说中的九重天劫。');
   const hasPill = (p.pills['渡劫丹'] ?? 0) > 0;
-  const hasCompanion = p.daoCompanion !== null;
+  // 全部道侣（含旧档仅存的 daoCompanion 名）
+  const daoNames = leads.filter((l) => l.dao).map((l) => l.name);
+  if (p.daoCompanion && !daoNames.includes(p.daoCompanion)) daoNames.push(p.daoCompanion);
+  const hasCompanion = daoNames.length > 0;
   if (hasPill) {
     await io.narrate(green('你服下渡劫丹，气机暴涨，硬撼天劫！'));
     p.pills['渡劫丹'] -= 1;
   }
   if (hasCompanion) {
-    await io.narrate(magenta(`你的道侣 ${p.daoCompanion} 执手相随，与你并肩立于雷云之下。`));
-    await io.narrate('「生同衾，死同穴。」她与你掌心相抵，共抗天劫。');
+    await io.narrate(magenta(`你的道侣 ${daoNames.join('、')} 执手相随，与你并肩立于雷云之下。`));
+    await io.narrate('「生同衾，死同穴。」她们与你掌心相抵，共抗天劫。');
   }
   const rate = 0.7 + (hasCompanion ? 0.1 : 0);
   if (hasPill || chance(rate)) {
@@ -258,7 +261,7 @@ export async function ascend(p: Player, io: GameIO): Promise<boolean> {
     await io.narrate(green('你终于挺了过来，肉身成圣，霞光万道，天门大开！'));
     if (hasCompanion) {
       io.print(magenta('═'.repeat(46)));
-      io.print(magenta(`   神仙眷侣！${p.name} 与 ${p.daoCompanion} 携手飞升，`));
+      io.print(magenta(`   神仙眷侣！${p.name} 与 ${daoNames.join('、')} 携手飞升，`));
       io.print(magenta('   自此比翼九霄，双宿双飞，成仙作祖！'));
       io.print(magenta('═'.repeat(46)));
     } else {

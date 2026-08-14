@@ -6,7 +6,7 @@ import {
   SURNAMES, FEMALE_GIVEN, TITLES, APPEARANCES, PERSONALITIES,
 } from '../content.js';
 import type { OriginDef, SectDef } from '../content.js';
-import { pick, weightedPick } from './rng.js';
+import { pick, weightedPick, randint } from './rng.js';
 
 /** 随机测灵根，返回 { name, mult }。 */
 export function rollRoot(): { name: string; mult: number } {
@@ -32,7 +32,7 @@ export function createPlayer(name: string, origin: OriginDef, sect: SectDef): Pl
     sectRank: 0,
     sectMaster: false,
     mastered: [],
-    techProficiency: {},
+    techProficiency: { [origin.technique]: 0 },
     fragments: {},
     spells: [],
     pillToxin: 0,
@@ -69,13 +69,16 @@ export function makeLead(player: Player): FemaleLead {
   const name = pick(SURNAMES) + pick(FEMALE_GIVEN);
   const offset = pick([-1, 0, 0, 1]);
   const idx = Math.max(0, Math.min(REALMS.length - 2, player.realmIdx + offset));
-  const realm = REALMS[idx].name + pick(REALMS[idx].stages);
+  const stageIdx = randint(0, REALMS[idx].stages.length - 1);
+  const realm = REALMS[idx].name + REALMS[idx].stages[stageIdx];
   return {
     name,
     title: pick(TITLES),
     appearance: pick(APPEARANCES),
     personality: pick(PERSONALITIES),
     realm,
+    realmIdx: idx,
+    stageIdx,
     favor: 0,
     met: true,
     dao: false,

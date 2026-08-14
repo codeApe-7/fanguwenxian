@@ -4,8 +4,9 @@ import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
 import {
   REALMS, ORIGINS, SECTS, SCENARIOS, GOLDEN_FINGERS, SURNAMES,
-  SECT_RANKS, SECT_RANK_NEED,
-  techLevelName, toxinPenalty, playerTitle, playerAttack, playerDefense, playerHp,
+  SECT_RANKS, SECT_RANK_NEED, TECHNIQUES,
+  techLevelName, techPower, techPowerOf, switchTechnique, techniqueSummary,
+  toxinPenalty, playerTitle, playerAttack, playerDefense, playerHp,
 } from '../content.js';
 import { blue, bold, green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick } from './rng.js';
@@ -14,7 +15,7 @@ import { cultivate, breakthrough, ascend, takePill, comprehendFragments } from '
 import { explore } from './explore.js';
 import { market } from './market.js';
 import { alchemy, forge, formation, talisman } from './crafts.js';
-import { romance } from './romance.js';
+import { romance, advanceLeads } from './romance.js';
 import { sectMenu, sectYearEnd } from './sect.js';
 import { maybeTriggerStory } from './storyline.js';
 import { saveGame, hasSave } from '../store.js';
@@ -138,7 +139,9 @@ function showStatus(state: GameState, io: GameIO): void {
   if (p.betrayedSect) io.print(red(`  通缉：被 ${p.betrayedSect} 追杀中（剩 ${p.betrayYears} 年）`));
   io.print(`  灵根：${yellow(p.root)}       年龄：${p.age} / 寿元 ${p.lifespan}`);
   io.print(`  境界：${green(playerTitle(p))}    修为：${p.cultivation.toFixed(0)} / 100`);
-  io.print(`  功法：${p.technique}·${techLevelName(p)}（熟练 ${p.techProficiency[p.technique] ?? 0}）    法宝：${cyan(p.treasure)}`);
+  const techProf = p.techProficiency[p.technique] ?? 0;
+  const techMult = (TECHNIQUES[p.technique]?.mult ?? 1) * techPower(p);
+  io.print(`  功法：${p.technique}·${techLevelName(p)}（熟练 ${techProf}，×${techMult.toFixed(2)}）    法宝：${cyan(p.treasure)}`);
   io.print(`  灵石：${yellow(String(p.spirit))}    心境：${p.heart}`);
   {
     const toxin = p.pillToxin ?? 0;
@@ -148,7 +151,11 @@ function showStatus(state: GameState, io: GameIO): void {
       io.print(`  丹毒：${toxin}/100${note}`);
     }
   }
-  if (p.daoCompanion) io.print(`  道侣：${magenta(p.daoCompanion)}（双修加成已生效）`);
+  {
+    const daoNames = state.leads.filter((l) => l.dao).map((l) => l.name);
+    if (p.daoCompanion && !daoNames.includes(p.daoCompanion)) daoNames.push(p.daoCompanion);
+    if (daoNames.length > 0) io.print(`  道侣：${magenta(daoNames.join('、'))}（双修加成已生效）`);
+  }
   if (p.goldenFinger) io.print(`  奇遇：${green(p.goldenFinger)}`);
   if (p.skills.length > 0) io.print(`  技艺：${p.skills.join('、')}`);
   if (p.formation !== '无') io.print(`  阵法：${cyan(p.formation)}`);
@@ -232,7 +239,42 @@ async function craftsMenu(state: GameState, io: GameIO): Promise<boolean> {
 
 type ActionResult = { years: number } | 'end';
 
-/** 闭关子菜单：闭关 N 年 / 参悟功法 / 参悟残篇。返回 { 总耗时年数, 修炼年数 }。 */
+/** 切换主修功法：列出全部已习得功法并对比属性（切换不耗时）。 */
+async function switchMenu(state: GameState, io: GameIO): Promise<void> {
+  const p = state.player;
+  while (true) {
+    const known = Object.keys(p.techProficiency ?? {});
+    if (known.length === 0) {
+      io.print(red('你尚未习得任何功法。'));
+      return;
+    }
+    io.print(cyan('—— 切换主修 ——'));
+    known.forEach((name, i) => {
+      const prof = p.techProficiency[name] ?? 0;
+      const eff = (TECHNIQUES[name]?.mult ?? 1) * techPowerOf(p, name);
+      const mark = name === p.technique ? '（当前）' : '';
+      io.print(` ${i + 1}) ${name}${mark}：${techniqueSummary(name)}，熟练 ${prof}（有效修炼 ×${eff.toFixed(2)}）`);
+    });
+    io.print(' 0) 返回');
+    const ch = await io.ask('选择：');
+    if (ch === '0' || ch === '') return;
+    const idx = parseInt(ch, 10);
+    if (isNaN(idx) || idx < 1 || idx > known.length) {
+      io.print(red('无效编号。'));
+      continue;
+    }
+    const name = known[idx - 1];
+    if (name === p.technique) {
+      io.print(yellow('你已主修此功法。'));
+      continue;
+    }
+    switchTechnique(p, name);
+    io.print(green(`自此主修《${name}》。`));
+    return;
+  }
+}
+
+/** 闭关子菜单：闭关 N 年 / 参悟功法 / 参悟残篇 / 切换主修。返回 { 总耗时年数, 修炼年数 }。 */
 async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: number; cultivate: number }> {
   const p = state.player;
   while (true) {
@@ -244,8 +286,9 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
     io.print(' 3) 闭关 5 年    4) 闭关 10 年');
     io.print(' 5) 参悟功法（熟练度 +15，耗时 1 年）');
     io.print(' 6) 参悟残篇');
+    io.print(' 7) 切换主修功法');
     io.print(' 0) 返回');
-    const ch = await io.ask('选择：', ['0', '1', '2', '3', '4', '5', '6'], '1');
+    const ch = await io.ask('选择：', ['0', '1', '2', '3', '4', '5', '6', '7'], '1');
     if (ch === '0' || ch === '') return { years: 0, cultivate: 0 };
     if (ch === '1' || ch === '2' || ch === '3' || ch === '4') {
       const years = [1, 3, 5, 10][parseInt(ch, 10) - 1];
@@ -259,6 +302,10 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
       p.techProficiency[p.technique] = Math.min(100, prof + 15);
       io.print(green(`你闭关参悟《${p.technique}》，熟练度 +15（${p.techProficiency[p.technique]}/100，${techLevelName(p)}）。`));
       return { years: 1, cultivate: 0 };
+    }
+    if (ch === '7') {
+      await switchMenu(state, io);
+      continue;
     }
     if (await comprehendFragments(state, io)) return { years: 1, cultivate: 0 };
   }
@@ -300,7 +347,7 @@ async function doAction(state: GameState, action: string, io: GameIO): Promise<A
     case '7': {
       const lastRealm = REALMS.length - 1;
       if (p.realmIdx === lastRealm && p.stageIdx === REALMS[lastRealm].stages.length - 1) {
-        await ascend(p, io); // 渡劫期大圆满：触发飞升结局
+        await ascend(p, state.leads, io); // 渡劫期大圆满：触发飞升结局
         return 'end';
       }
       if (p.cultivation < 100) {
@@ -330,6 +377,7 @@ function yearEnd(state: GameState, io: GameIO): boolean {
   }
   sectYearEnd(p, io);
   p.pillToxin = Math.max(0, (p.pillToxin ?? 0) - 2); // 丹毒每年自然消解 2 点
+  advanceLeads(state.leads, p.realmIdx); // 红颜修为随时间成长
   if (p.age >= p.lifespan) return true;
   if (p.lifespan - p.age <= 10) {
     io.print(red(`⚠ 寿元将尽！仅剩 ${p.lifespan - p.age} 年！速寻突破之法！`));

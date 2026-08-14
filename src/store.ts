@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { GameIO } from './io.js';
 import type { GameState } from './types.js';
+import { REALMS } from './content.js';
 import { green, red } from './colors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,12 +42,33 @@ export function loadGame(io: GameIO): GameState | null {
     p.sectMaster ??= false;
     p.mastered ??= [];
     p.techProficiency ??= {};
+    p.techProficiency[p.technique] ??= 0; // 当前主修纳入已习得列表
     p.fragments ??= {};
     p.spells ??= [];
     p.pillToxin ??= 0;
     p.skills ??= [];
     p.formation ??= '无';
     p.talismans ??= {};
+    // 红颜境界字段迁移（旧档仅有 realm 字符串）
+    for (const l of s.leads ?? []) {
+      if (typeof l.realmIdx !== 'number') {
+        let found = false;
+        for (let i = 0; i < REALMS.length; i++) {
+          if (l.realm?.startsWith(REALMS[i].name)) {
+            l.realmIdx = i;
+            const rest = l.realm.slice(REALMS[i].name.length);
+            const si = REALMS[i].stages.indexOf(rest);
+            l.stageIdx = si >= 0 ? si : 0;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          l.realmIdx = 0;
+          l.stageIdx = 0;
+        }
+      }
+    }
     return s;
   } catch (e) {
     io.print(red(`读档失败：${(e as Error).message}`));

@@ -29,6 +29,8 @@ function introduceHeroine(state: GameState, name: string): void {
     appearance: h.appearance,
     personality: h.personality,
     realm: playerTitle(state.player),
+    realmIdx: state.player.realmIdx,
+    stageIdx: state.player.stageIdx,
     favor: 35,
     met: true,
     dao: false,

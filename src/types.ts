@@ -44,10 +44,12 @@ export interface FemaleLead {
   title: string;
   appearance: string;
   personality: string;
-  realm: string;
-  favor: number;   // 好感度 0~100
+  realm: string;    // 境界名（展示用，随 realmIdx/stageIdx 同步）
+  realmIdx: number; // 大境界下标（随时间成长）
+  stageIdx: number; // 小境界下标
+  favor: number;    // 好感度 0~100
   met: boolean;
-  dao: boolean;    // 是否已是道侣
+  dao: boolean;     // 是否已是道侣
 }
 
 export interface GameState {

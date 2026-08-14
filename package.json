@@ -1,14 +1,39 @@
 {
   "name": "fangu-wenxian",
   "version": "0.1.0",
-  "description": "《凡骨问仙》终端文字冒险游戏（TypeScript，核心逻辑与 UI 分离，可迁移到网页）",
+  "description": "《凡骨问仙》——终端文字修仙冒险游戏：测灵根、拜宗门、修功法、历奇遇，逆天改命，渡劫飞升。",
   "type": "module",
+  "bin": {
+    "fangu-wenxian": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "修仙",
+    "xianxia",
+    "文字游戏",
+    "text-game",
+    "terminal",
+    "cli",
+    "game",
+    "roguelike"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeApe-7/fanguwenxian.git"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx smoke.test.ts"
+    "test": "tsx smoke.test.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "license": "MIT",
   "devDependencies": {

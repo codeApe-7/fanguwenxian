@@ -258,7 +258,7 @@ export const EVENTS: ExploreEvent[] = [
     run: async (p, _s, io) => {
       const t = upgradeTechnique(p);
       if (t) {
-        await io.narrate(green(`【游历·道统现世】你寻得一部失传功法《${t}》，从此修炼更上层楼！`));
+        await io.narrate(green(`【游历·道统现世】你寻得一部失传功法《${t}》！可于「闭关·切换主修」中启用。`));
       } else {
         addSpirit(p, 300);
         await io.narrate(yellow('【游历·道统现世】你得残卷一部，与你功法相当，只换得些灵石。'));

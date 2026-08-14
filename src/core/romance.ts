@@ -2,13 +2,31 @@
 
 import type { GameIO } from '../io.js';
 import type { Player, FemaleLead } from '../types.js';
-import { PERSONALITY_MODS } from '../content.js';
+import { PERSONALITY_MODS, REALMS } from '../content.js';
 import { green, red, yellow, magenta, dim } from '../colors.js';
-import { randint } from './rng.js';
+import { randint, chance } from './rng.js';
 
 /** 取女主性格的互动倍率（未知性格按 1.0 处理）。 */
 function modsOf(l: FemaleLead) {
   return PERSONALITY_MODS[l.personality] ?? { name: l.personality, talk: 1, debate: 1, gift: 1 };
+}
+
+/** 红颜随时间成长修为（每年结算，成长慢于主角，不超过主角当前大境界）。 */
+export function advanceLeads(leads: FemaleLead[], playerRealm: number): void {
+  for (const l of leads) {
+    if (l.realmIdx >= playerRealm) continue; // 不超越主角
+    if (!chance(0.2)) continue;
+    const realm = REALMS[l.realmIdx];
+    if (l.stageIdx < realm.stages.length - 1) {
+      l.stageIdx += 1;
+    } else if (l.realmIdx < REALMS.length - 2) {
+      l.realmIdx += 1;
+      l.stageIdx = 0;
+    } else {
+      continue;
+    }
+    l.realm = REALMS[l.realmIdx].name + REALMS[l.realmIdx].stages[l.stageIdx];
+  }
 }
 
 export function leadDescription(l: FemaleLead): string {

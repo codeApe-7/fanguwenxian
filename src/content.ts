@@ -165,10 +165,9 @@ export function techniqueSummary(name: string): string {
   return tier + parts.join('，');
 }
 
-/** 修习功法：设置主修并结算一次性效果（寿元等仅首次生效），附带神通。 */
+/** 习得功法：记录入库（不自动改修），结算一次性效果（寿元等仅首次生效），附带神通。 */
 export function learnTechnique(p: Player, name: string): void {
-  if (p.technique === name) return;
-  p.technique = name;
+  p.techProficiency[name] ??= 0; // 习得入库
   const def = TECHNIQUES[name];
   if (def?.lifespan && !p.mastered.includes(name)) {
     p.mastered.push(name);
@@ -179,6 +178,13 @@ export function learnTechnique(p: Player, name: string): void {
       if (!p.spells.includes(s)) p.spells.push(s);
     }
   }
+}
+
+/** 切换主修功法（须已习得），返回是否成功。 */
+export function switchTechnique(p: Player, name: string): boolean {
+  if (!(name in (p.techProficiency ?? {}))) return false;
+  p.technique = name;
+  return true;
 }
 
 // ---- 功法熟练度（入门 → 小成 → 大成 → 圆满） ----
@@ -192,10 +198,15 @@ export function techLevelOf(prof: number): number {
   return 0;
 }
 
-/** 当前主修功法的熟练度倍率（层级越高功效越强）。 */
-export function techPower(p: Player): number {
-  const prof = p.techProficiency?.[p.technique] ?? 0;
+/** 指定功法的熟练度倍率（层级越高功效越强）。 */
+export function techPowerOf(p: Player, name: string): number {
+  const prof = p.techProficiency?.[name] ?? 0;
   return [1, 1.15, 1.3, 1.5][techLevelOf(prof)];
+}
+
+/** 当前主修功法的熟练度倍率。 */
+export function techPower(p: Player): number {
+  return techPowerOf(p, p.technique);
 }
 
 /** 当前主修功法的熟练度层级名。 */
@@ -675,10 +686,11 @@ export function sectOf(p: Player): SectDef | undefined {
   return SECTS.find((s) => s.name === p.sect);
 }
 
-// ---- 宗门职阶（贡献晋升，职阶越高宗门效果越强） ----
+// ---- 宗门职阶（贡献 + 修为双门槛晋升，职阶越高宗门效果越强） ----
 export const SECT_RANKS = ['外门弟子', '内门弟子', '真传弟子', '长老'];
 export const SECT_RANK_NEED = [0, 100, 300, 600]; // 晋升所需累计贡献
 export const SECT_RANK_POWER = [1, 1.25, 1.5, 2]; // 宗门效果倍率
+export const SECT_RANK_REALM = [0, 1, 2, 3]; // 晋升所需最低大境界下标（外门炼气/内门筑基/真传结丹/长老元婴）
 
 /** 当前职阶的宗门效果倍率（散修恒为 1）。 */
 export function sectPower(p: Player): number {
