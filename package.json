@@ -1,6 +1,6 @@
 {
   "name": "fangu-wenxian",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "《凡骨问仙》——终端文字修仙冒险游戏：测灵根、拜宗门、修功法、历奇遇，逆天改命，渡劫飞升。",
   "type": "module",
   "bin": {
