@@ -1,0 +1,19 @@
+{
+  "name": "fangu-wenxian",
+  "version": "0.1.0",
+  "description": "《凡骨问仙》终端文字冒险游戏（TypeScript，核心逻辑与 UI 分离，可迁移到网页）",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx smoke.test.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}
