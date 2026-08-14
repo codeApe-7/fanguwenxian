@@ -232,11 +232,13 @@ async function craftsMenu(state: GameState, io: GameIO): Promise<boolean> {
     const idx = parseInt(ch, 10);
     if (isNaN(idx) || idx < 1 || idx > entries.length) {
       io.print(red('无效编号。'));
+      await io.pause();
       continue;
     }
     const [name, run] = entries[idx - 1];
     if (!p.skills.includes(name)) {
       io.print(red(`你尚未掌握${name}之术，需拜师、得传承或遇机缘方可习得。`));
+      await io.pause();
       continue;
     }
     await run();
@@ -306,6 +308,7 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
     if (ch === '5') {
       if (prof >= 100) {
         io.print(yellow('此功法已臻圆满，参悟无益。'));
+        await io.pause();
         continue;
       }
       p.techProficiency[p.technique] = Math.min(100, prof + 15);
@@ -319,11 +322,13 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
     if (ch === '8') {
       if (p.spirit < 50) {
         io.print(red(`灵石不足（需 50，当前 ${p.spirit}）。`));
+        await io.pause();
         continue;
       }
       p.spirit -= 50;
       p.spiritWarm = (p.spiritWarm ?? 0) + 5;
       io.print(green(`你取灵石布下温养法阵，未来 ${p.spiritWarm} 年闭关效率 +20%。`));
+      await io.pause();
       continue;
     }
     if (await comprehendFragments(state, io)) return { years: 1, cultivate: 0 };

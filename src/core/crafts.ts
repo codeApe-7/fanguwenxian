@@ -38,6 +38,7 @@ export async function alchemy(p: Player, io: GameIO): Promise<void> {
     const idx = parseInt(ch, 10);
     if (isNaN(idx) || idx < 1 || idx > items.length) {
       io.print(red('无效编号。'));
+      await io.pause();
       continue;
     }
     const [name, recipe] = items[idx - 1];
@@ -75,6 +76,7 @@ export async function forge(p: Player, io: GameIO): Promise<void> {
     const idx = parseInt(ch, 10);
     if (isNaN(idx) || idx < 1 || idx > items.length) {
       io.print(red('无效编号。'));
+      await io.pause();
       continue;
     }
     const [name, recipe] = items[idx - 1];
@@ -112,11 +114,13 @@ export async function formation(p: Player, io: GameIO): Promise<void> {
     const idx = parseInt(ch, 10);
     if (isNaN(idx) || idx < 1 || idx > items.length) {
       io.print(red('无效编号。'));
+      await io.pause();
       continue;
     }
     const [name, def] = items[idx - 1];
     if (name === p.formation) {
       io.print(yellow('你已布下此阵。'));
+      await io.pause();
       continue;
     }
     if (Object.entries(def.cost).some(([m, n]) => (p.materials[m] ?? 0) < n)) {
@@ -148,6 +152,7 @@ export async function talisman(p: Player, io: GameIO): Promise<void> {
     const idx = parseInt(ch, 10);
     if (isNaN(idx) || idx < 1 || idx > items.length) {
       io.print(red('无效编号。'));
+      await io.pause();
       continue;
     }
     const [name, def] = items[idx - 1];

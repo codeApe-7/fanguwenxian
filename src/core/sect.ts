@@ -136,12 +136,14 @@ async function donate(state: GameState, io: GameIO): Promise<void> {
   if (isNaN(n) || n <= 0) return;
   if (n > p.spirit) {
     io.print(red('灵石不足。'));
+    await io.pause();
     return;
   }
   p.spirit -= n;
   const c = Math.floor(n / DONATE_RATE);
   p.sectContribution += c;
   io.print(green(`捐献 ${n} 灵石，获得 ${c} 贡献。`));
+  await io.pause();
 }
 
 /** 晋升考核：挑战守关师兄，胜则晋升（消耗贡献）。 */
@@ -150,16 +152,19 @@ async function tryPromote(state: GameState, io: GameIO): Promise<boolean> {
   const rank = rankOf(p);
   if (rank >= SECT_RANKS.length - 1) {
     io.print(yellow(`你已是${SECT_RANKS[rank]}，位极人臣。`));
+    await io.pause();
     return false;
   }
   const next = rank + 1;
   const need = SECT_RANK_NEED[next];
   if (p.realmIdx < SECT_RANK_REALM[next]) {
     io.print(red(`修为不足（晋升${SECT_RANKS[next]}需 ${REALMS[SECT_RANK_REALM[next]].name} 以上，你当前 ${playerTitle(p)}）。`));
+    await io.pause();
     return false;
   }
   if ((p.sectContribution ?? 0) < need) {
     io.print(red(`贡献不足（晋升${SECT_RANKS[next]}需 ${need} 贡献，当前 ${p.sectContribution}）。`));
+    await io.pause();
     return false;
   }
   io.print(`晋升考核：击败守关师兄，方可晋升${SECT_RANKS[next]}。`);
@@ -319,10 +324,12 @@ async function tourney(state: GameState, io: GameIO): Promise<boolean> {
   if (p.age % TOURNEY_INTERVAL !== 0) {
     const next = Math.ceil(p.age / TOURNEY_INTERVAL) * TOURNEY_INTERVAL;
     io.print(red(`宗门大比每 ${TOURNEY_INTERVAL} 年一届，下届在你 ${next} 岁时举办。`));
+    await io.pause();
     return false;
   }
   if (rankOf(p) < 1) {
     io.print(red('宗门大比需内门弟子及以上方可参赛。'));
+    await io.pause();
     return false;
   }
   await io.narrate('九州宗门大比开幕，各宗天骄云集！');
@@ -357,14 +364,17 @@ async function challengeMaster(state: GameState, io: GameIO): Promise<boolean> {
   const p = state.player;
   if (p.sectMaster) {
     io.print(yellow('你已是本宗宗主。'));
+    await io.pause();
     return false;
   }
   if (rankOf(p) < SECT_RANKS.length - 1) {
     io.print(red('需晋升长老后方可挑战宗主。'));
+    await io.pause();
     return false;
   }
   if ((p.sectContribution ?? 0) < MASTER_NEED) {
     io.print(red(`贡献不足（需 ${MASTER_NEED}，当前 ${p.sectContribution}）。`));
+    await io.pause();
     return false;
   }
   io.print(`挑战宗主：击败现任宗主方可继位（消耗 ${MASTER_NEED} 贡献）。`);
@@ -389,6 +399,7 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
   const p = state.player;
   if (!p.sectMaster) {
     io.print(red('唯有宗主方可发动宗门战争。'));
+    await io.pause();
     return false;
   }
   const targets = SECTS.filter((s) => s.name !== p.sect && s.name !== '散修');
@@ -400,6 +411,7 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
   const idx = parseInt(ch, 10);
   if (isNaN(idx) || idx < 1 || idx > targets.length) {
     io.print(red('无效编号。'));
+    await io.pause();
     return false;
   }
   const target = targets[idx - 1];
@@ -479,6 +491,7 @@ async function leaveSect(state: GameState, io: GameIO): Promise<boolean> {
   const p = state.player;
   if (p.sect === '散修') {
     io.print(yellow('你本就是散修，无宗可叛。'));
+    await io.pause();
     return false;
   }
   io.print(`你欲脱离 ${p.sect}：`);
@@ -490,6 +503,7 @@ async function leaveSect(state: GameState, io: GameIO): Promise<boolean> {
   if (ch === '1') {
     if (p.spirit < BETRAY_FEE) {
       io.print(red('灵石不足。'));
+      await io.pause();
       return false;
     }
     p.spirit -= BETRAY_FEE;
@@ -521,6 +535,7 @@ async function joinSect(state: GameState, io: GameIO): Promise<boolean> {
   const idx = parseInt(ch, 10);
   if (isNaN(idx) || idx < 1 || idx > targets.length) {
     io.print(red('无效编号。'));
+    await io.pause();
     return false;
   }
   const target = targets[idx - 1];
@@ -529,6 +544,7 @@ async function joinSect(state: GameState, io: GameIO): Promise<boolean> {
   const fail = checkJoinReq(target, state);
   if (fail) {
     io.print(red(fail));
+    await io.pause();
     return false;
   }
   // 已是正式宗门弟子，需先脱离旧宗

@@ -51,6 +51,7 @@ export async function romance(p: Player, leads: FemaleLead[], io: GameIO): Promi
     const idx = parseInt(ch, 10);
     if (isNaN(idx) || idx < 1 || idx > leads.length) {
       io.print(red('无效编号。'));
+      await io.pause();
       continue;
     }
     await visitLead(p, leads[idx - 1], io);
@@ -75,6 +76,7 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<void>
     } else if (ch === '2') {
       if (lead.favor < 30) {
         io.print(red('你们还不够熟识。'));
+        await io.pause();
         continue;
       }
       const g = Math.max(1, Math.round(randint(5, 12) * modsOf(lead).debate));
