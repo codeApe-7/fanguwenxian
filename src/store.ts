@@ -11,17 +11,18 @@ import { yearOfAge } from './core/text.js';
 import { green, red } from './colors.js';
 
 // 存档写入用户主目录，避免落在包安装目录（npx/全局安装下不稳定且易被覆盖）。
-const SAVE_DIR = join(homedir(), '.fangu-wenxian');
-const SAVE_FILE = join(SAVE_DIR, 'savegame.json');
+// QA 脚本（playtest/selfplay）用 FANGU_SAVE_DIR 重定向存档，避免自动通关覆盖真实存档。
+const saveDir = () => process.env.FANGU_SAVE_DIR ?? join(homedir(), '.fangu-wenxian');
+const saveFile = () => join(saveDir(), 'savegame.json');
 
 export function hasSave(): boolean {
-  return existsSync(SAVE_FILE);
+  return existsSync(saveFile());
 }
 
 export function saveGame(state: GameState, io: GameIO): void {
   try {
-    mkdirSync(SAVE_DIR, { recursive: true });
-    writeFileSync(SAVE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+    mkdirSync(saveDir(), { recursive: true });
+    writeFileSync(saveFile(), JSON.stringify(state, null, 2), 'utf-8');
     io.print(green('存档成功！'));
   } catch (e) {
     io.print(red(`存档失败：${(e as Error).message}`));
@@ -29,9 +30,9 @@ export function saveGame(state: GameState, io: GameIO): void {
 }
 
 export function loadGame(io: GameIO): GameState | null {
-  if (!existsSync(SAVE_FILE)) return null;
+  if (!existsSync(saveFile())) return null;
   try {
-    const data = JSON.parse(readFileSync(SAVE_FILE, 'utf-8'));
+    const data = JSON.parse(readFileSync(saveFile(), 'utf-8'));
     if (!data || !data.player || typeof data.player.realmIdx !== 'number') return null;
     const s = data as GameState;
     // 旧存档字段迁移：补齐新增字段默认值

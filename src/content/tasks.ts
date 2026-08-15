@@ -19,6 +19,8 @@ export interface SectTaskDef {
   material?: string;
   matN?: number;
   pill?: string;
+  /** patrol 类任务的完成旁白（缺省用巡山通稿）。 */
+  done?: string;
   reward: number;       // 基础贡献（按境界缩放）
   cd: number;           // 冷却（年）
   realmMin?: number;
@@ -81,6 +83,7 @@ export const SECT_TASKS: SectTaskDef[] = [
     id: '镇阵', step: '镇守护山大阵', kind: 'patrol', diff: 2, reward: 45, cd: 4, realmMin: 2,
     world: '护山大阵一角阵基年久失修，重修期间需一位«结丹以上»修士以自身法力坐镇阵眼，为期一年。',
     say: '「{daoyou}，坐阵眼是苦差，一年动弹不得——可满宗门数得着修为的，就那么几位。」',
+    done: '你于阵眼枯坐一载，以法力温养阵基。阵成之日，全阵灵光大盛，长老们纷纷颔首。',
     failSay: '',
   },
   // ═══ 简单（一星） ═══
@@ -106,12 +109,14 @@ export const SECT_TASKS: SectTaskDef[] = [
     id: '巡山', step: '巡视宗门属地', kind: 'patrol', diff: 1, reward: 15, cd: 1, realmMax: 3,
     world: '按门规，属地四境每岁须巡视一周：查妖踪、修界碑、访佃户。脚程一年，风雨无阻。',
     say: '「{daoyou}，巡山是笨功夫，可门里的太平，就是一双双脚底板走出来的。」',
+    done: '你巡守宗门属地一年，修界碑、访佃户，赶走了几只不开眼的小妖。',
     failSay: '',
   },
   {
     id: '守灵田', step: '看守灵田一年', kind: 'patrol', diff: 1, reward: 15, cd: 1, realmMax: 3,
     world: '灵田夜里屡遭野物拱食，田监告到执事堂，讨一位弟子守夜驱兽，为期一年。',
     say: '「{daoyou}，守田清苦，胜在安稳——正好把日课补一补，两不耽误。」',
+    done: '你守了一年灵田：白日理渠除虫，入夜燃灯驱兽。秋来田监验收，灵穗颗颗饱满，他笑得见牙不见眼。',
     failSay: '',
   },
 ];

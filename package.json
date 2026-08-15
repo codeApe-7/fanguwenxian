@@ -34,6 +34,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx smoke.test.ts",
     "playtest": "tsx playtest.ts",
+    "selfplay": "tsx selfplay.ts",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "license": "MIT",

@@ -161,7 +161,7 @@ export const LETTERS: LetterDef[] = [
     intro: '一道猩红的传音符钉在你门前树上，符尾还在滴溜溜打转——是战书。',
     run: async (state, io) => {
       const p = state.player;
-      await io.narrate('「阁下连胜之名，江湖尽知。三日后«洗剑池»一会，胜者留名，败者留物。」落款：无名剑客。');
+      await io.narrate(fill('「阁下连胜之名，江湖尽知。三日后«洗剑池»一会，胜者留名，败者留物。」落款：无名剑客。', {}));
       io.print(' 1) 赴约一战');
       io.print(' 2) 置之不理');
       const ch = await io.ask('你的选择：', ['1', '2'], '1');

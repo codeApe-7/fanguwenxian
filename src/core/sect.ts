@@ -136,9 +136,7 @@ async function takeTask(state: GameState, io: GameIO): Promise<boolean> {
       return true;
     }
     // 巡逻 / 镇守（不会失败）
-    await io.narrate(task.id === '镇阵'
-      ? '你于阵眼枯坐一载，以法力温养阵基。阵成之日，全阵灵光大盛，长老们纷纷颔首。'
-      : '你巡守宗门属地一年，修界碑、访佃户，赶走了几只不开眼的小妖。');
+    await io.narrate(task.done ?? '你巡守宗门属地一年，修界碑、访佃户，赶走了几只不开眼的小妖。');
     p.sectContribution += reward;
     p.taskCd[task.id] = state.year + task.cd;
     if (chance(0.4)) {
@@ -368,7 +366,12 @@ async function tourney(state: GameState, io: GameIO): Promise<boolean> {
     p.spirit += 300 * incomeScale(p.realmIdx);
     p.materials['灵石精'] = (p.materials['灵石精'] ?? 0) + 1;
     await io.narrate(green('三战全胜！你力压群雄，夺下本届大比魁首，宗门上下与有荣焉！'));
-    addBio(p, `${eraYear(state.year)}宗门大比夺魁`);
+    // 大事记只立首度夺魁——立传记的是「第一次」，不是流水账
+    p.flags ??= {};
+    if (!p.flags['大比魁首']) {
+      p.flags['大比魁首'] = 1;
+      addBio(p, '首夺宗门大比魁首');
+    }
   } else if (wins === 2) {
     p.sectContribution += 60;
     p.spirit += 150 * incomeScale(p.realmIdx);

@@ -1,6 +1,8 @@
 // 自动通关驱动器（文案 QA 用）：脚本化 GameIO 全速跑完一局，输出全程文本。
 // 运行：npx tsx playtest.ts [seed 无效，纯随机] > /tmp/playthrough.txt
 
+process.env.FANGU_SAVE_DIR ??= '/tmp/fangu-playtest'; // 结局自动存档重定向，勿覆盖真实存档
+
 import type { GameIO } from './src/io.js';
 import type { GameState } from './src/types.js';
 import { ORIGINS, SECTS, SCENARIOS } from './src/content.js';

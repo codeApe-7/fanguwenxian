@@ -185,7 +185,7 @@ async function main() {
     await worldTick(wState, io);
     io.queue = [];
     const w2 = createPlayer('测试', ORIGINS[0], SECTS[0]);
-    const w2State: GameState = { player: w2, leads: [], year: 125 }; // 魔乱窗口 120-124，刚关窗
+    const w2State: GameState = { player: w2, leads: [], year: 136 }; // 魔乱窗口 120-135，刚关窗
     io.queue = ['n']; // 顺带的英杰会
     await worldTick(w2State, io);
     io.queue = [];

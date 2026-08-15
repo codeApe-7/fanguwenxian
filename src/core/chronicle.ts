@@ -134,7 +134,7 @@ export const WORLD_EVENTS: WorldEventDef[] = [
   },
   // —— 一次性 · 玄阴魔乱 ——
   {
-    id: '魔乱', name: '玄阴魔乱', startYear: 120, endYear: 124, realmMin: 1,
+    id: '魔乱', name: '玄阴魔乱', startYear: 120, endYear: 135, realmMin: 1,
     world: [
       '玄启一百二十年，魔道巨擘「玄阴老祖」出关，纠集群魔连破正道七城，九州震动。',
       '昭衡司广发英雄帖，正邪之战一触即发——乱世已至，人人都得选个站处。',
@@ -174,7 +174,7 @@ export const WORLD_EVENTS: WorldEventDef[] = [
         }
       } else {
         p.heart = Math.max(0, p.heart - 3);
-        await io.narrate(dim('你封了洞府静修。烽烟在山外烧了四年，你的蒲团纹丝未动——只是偶尔夜里，会听见山下逃难的人声。'));
+        await io.narrate(dim('你封了洞府静修。烽烟在山外烧了十几年，你的蒲团纹丝未动——只是偶尔夜里，会听见山下逃难的人声。'));
       }
     },
     missText: [
