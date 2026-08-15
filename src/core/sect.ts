@@ -2,7 +2,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { SECTS, REALMS, TECHNIQUES, PILLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, SECT_RANK_REALM, learnTechnique, upgradeTechnique, techniqueSummary, playerTitle, incomeScale } from '../content.js';
+import { SECTS, REALMS, TECHNIQUES, PILLS, SPELLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, SECT_RANK_REALM, learnTechnique, learnSpell, upgradeTechnique, techniqueSummary, playerTitle, playerHp, incomeScale } from '../content.js';
 import type { SectDef } from '../content.js';
 import { SECT_TASKS, honorificOf } from '../content/tasks.js';
 import type { SectTaskDef } from '../content/tasks.js';
@@ -11,6 +11,7 @@ import { fill, addBio, eraYear } from './text.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick, chance, randint } from './rng.js';
 import { combat } from './combat.js';
+import type { CarryHp, CombatOpts } from './combat.js';
 
 const BETRAY_FEE = 200;       // 请辞出宗需缴纳的灵石
 const PURSUIT_YEARS = 15;     // 强行叛逃被追杀的年限
@@ -96,7 +97,12 @@ async function takeTask(state: GameState, io: GameIO): Promise<boolean> {
     if (ok !== 'y') continue;
 
     if (task.kind === 'combat') {
-      const r = await combat(p, state.leads, io, task.intro ? fill(task.intro, ctx) : undefined, task.boost ?? 0);
+      const r = await combat(p, state.leads, io, {
+        intro: task.intro ? fill(task.intro, ctx) : undefined,
+        boost: task.boost ?? 0,
+        kind: task.foeKind ?? '妖兽',
+        title: `宗门任务 · ${task.step}`,
+      });
       p.taskCd[task.id] = state.year + task.cd;
       if (r === 'win') {
         p.sectContribution += reward;
@@ -191,7 +197,12 @@ async function tryPromote(state: GameState, io: GameIO): Promise<boolean> {
   io.print(`晋升考核：击败守关师兄，方可晋升${SECT_RANKS[next]}。`);
   const ch = await io.ask('是否挑战？(y/n)', ['y', 'n'], 'y');
   if (ch !== 'y') return false;
-  const r = await combat(p, state.leads, io, '守关师兄出手相试——正是 {enemy}！');
+  const r = await combat(p, state.leads, io, {
+    intro: '守关师兄按剑而立，冲你一点头——正是 {enemy}！',
+    kind: '同门',
+    arena: '切磋',
+    title: `晋升考核 · ${SECT_RANKS[next]}`,
+  });
   if (r === 'win') {
     p.sectContribution -= need;
     p.sectRank = next;
@@ -252,6 +263,20 @@ function scriptureItems(p: Player): Array<[string, number]> {
   const items = [...SCRIPTURE_SHOP];
   if (sig && !items.some(([n]) => n === sig)) items.unshift([sig, SIGNATURE_PRICE]);
   return items;
+}
+
+/**
+ * 法堂可兑换神通：通用玉简（贡献价 = 灵石价的 1/12）+ 本宗不传之秘。
+ * 宗门专属的几式坊市无货，只有在自家法堂才拿得到——这是留在宗门里的理由之一。
+ */
+function spellItems(p: Player): Array<[string, number]> {
+  const items: Array<[string, number]> = [];
+  for (const [name, d] of Object.entries(SPELLS)) {
+    if (!d.price) continue;
+    if (d.sect && d.sect !== p.sect) continue;
+    items.push([name, Math.max(10, Math.round(d.price / (d.sect ? 8 : 12)))]);
+  }
+  return items.sort((a, b) => a[1] - b[1]);
 }
 // 聚宝仙楼：丹药/材料 -> 贡献价
 const PILL_SHOP: Array<[string, number]> = [
@@ -316,8 +341,9 @@ async function treasury(state: GameState, io: GameIO): Promise<void> {
     io.print(`贡献：${p.sectContribution ?? 0}${p.sectMaster ? '（宗主免单）' : ''}`);
     io.print(' 1) 藏经阁（兑换功法）');
     io.print(' 2) 聚宝仙楼（兑换丹药 / 材料）');
+    io.print(' 3) 法堂（兑换神通玉简）');
     io.print(' 0) 返回');
-    const ch = await io.ask('选择：', ['0', '1', '2'], '0');
+    const ch = await io.ask('选择：', ['0', '1', '2', '3'], '0');
     if (ch === '0' || ch === '') return;
     if (ch === '1') {
       await buyFrom(state, io, '藏经阁', scriptureItems(p), (n) => {
@@ -326,6 +352,15 @@ async function treasury(state: GameState, io: GameIO): Promise<void> {
           return false;
         }
         learnTechnique(p, n);
+        return true;
+      });
+    } else if (ch === '3') {
+      await buyFrom(state, io, '法堂', spellItems(p), (n) => {
+        if ((p.spells ?? []).includes(n)) {
+          io.print(yellow('你已习得此式。'));
+          return false;
+        }
+        learnSpell(p, n);
         return true;
       });
     } else {
@@ -355,11 +390,26 @@ async function tourney(state: GameState, io: GameIO): Promise<boolean> {
     return false;
   }
   await io.narrate('九州宗门大比开幕，各宗天骄云集！');
+  await io.narrate('执法长老当众宣了台规：登台者尽解丹药法器，只凭一身修为与所学神通。');
   let wins = 0;
+  // 三轮连打：气血带伤进下一场，轮间只得半炷香调息——赢下首轮不等于赢下全场
+  const carry: CarryHp = { hp: playerHp(p) };
   for (let i = 0; i < 3; i++) {
     const rival = pick(SECTS.filter((s) => s.name !== p.sect)).name;
-    const r = await combat(p, state.leads, io, `第 ${i + 1} 轮，对手是 ${cyan(rival)} 天骄——正是 {enemy}！`);
+    const r = await combat(p, state.leads, io, {
+      intro: `第 ${i + 1} 轮，${cyan(rival)}的天骄跃上擂台——正是 {enemy}！`,
+      kind: '天骄',
+      fight: '擂台',
+      // 大比不许带丹药法器上台：比的是修为与神通，不是谁家底厚
+      noItems: true,
+      title: `宗门大比 · 第${'一二三'[i]}轮`,
+      carry,
+    });
     if (r === 'win') wins += 1;
+    if (i < 2) {
+      carry.hp = Math.min(playerHp(p), carry.hp + Math.round(playerHp(p) * 0.3));
+      await io.narrate(dim('场间半炷香调息。你压下翻涌的气血，再上擂台。'));
+    }
   }
   if (wins === 3) {
     p.sectContribution += 100;
@@ -408,7 +458,11 @@ async function challengeMaster(state: GameState, io: GameIO): Promise<boolean> {
   io.print(`挑战宗主：击败现任宗主方可继位（消耗 ${MASTER_NEED} 贡献）。`);
   const ch = await io.ask('是否挑战？(y/n)', ['y', 'n'], 'y');
   if (ch !== 'y') return false;
-  const r = await combat(p, state.leads, io, '你踏上宗主大殿，现任宗主起身迎战——正是 {enemy}！');
+  const r = await combat(p, state.leads, io, {
+    intro: '你踏上宗主大殿，现任宗主自蒲团起身，衣袖一振——正是 {enemy}！',
+    foe: `${p.sect}宗主`,
+    title: '挑战宗主',
+  });
   if (r === 'win') {
     p.sectContribution -= MASTER_NEED;
     p.sectMaster = true;
@@ -449,12 +503,16 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
 
   await io.narrate(`你率全宗之众，杀向 ${red(target.name)}！`);
   let wins = 0;
-  const r1 = await combat(p, state.leads, io, '攻破护山大阵，守阵弟子拼死拦截——正是 {enemy}！');
-  if (r1 === 'win') wins += 1;
-  const r2 = await combat(p, state.leads, io, '杀入宗门腹地，内门精英结阵拦路——正是 {enemy}！');
-  if (r2 === 'win') wins += 1;
-  const r3 = await combat(p, state.leads, io, '直捣宗主大殿，对方宗主亲自迎战——正是 {enemy}！');
-  if (r3 === 'win') wins += 1;
+  // 三阵一气呵成，中间只来得及吞一粒丹——这是强攻，不是擂台
+  const carry: CarryHp = { hp: playerHp(p) };
+  const push = async (intro: string, opts: Partial<CombatOpts>): Promise<void> => {
+    const r = await combat(p, state.leads, io, { intro, carry, title: `攻伐${target.name}`, ...opts });
+    if (r === 'win') wins += 1;
+    carry.hp = Math.min(playerHp(p), carry.hp + Math.round(playerHp(p) * 0.1));
+  };
+  await push('攻破护山大阵，守阵弟子拼死拦截——正是 {enemy}！', { kind: '同门' });
+  await push('杀入宗门腹地，内门精英结阵拦路——正是 {enemy}！', { kind: '天骄' });
+  await push('直捣宗主大殿，对方宗主亲自迎战——正是 {enemy}！', { foe: `${target.name}宗主`, boost: 1 });
 
   if (wins === 3) {
     const loot = randint(300, 800) * incomeScale(p.realmIdx);

@@ -2,10 +2,18 @@
 
 import type { GameIO } from '../io.js';
 import type { Player, FemaleLead, GameState } from '../types.js';
-import { REALMS, ROOTS, TECHNIQUES, PILLS, FORMATIONS, TALISMANS, sectOf, sectPower, techPower, learnTechnique, FRAGMENT_NEED, toxinPenalty, playerTitle } from '../content.js';
-import { green, red, yellow, cyan, dim, magenta } from '../colors.js';
-import { chance, randint } from './rng.js';
+import {
+  REALMS, ROOTS, TECHNIQUES, PILLS, FORMATIONS, TALISMANS, SPELLS,
+  SPELL_MAX_LV, SPELL_LV_COST, YUANYING_VISIONS, DAO_PATHS, CORE_TYPES, CORE_QUALITY_NAMES,
+  sectOf, sectPower, techPower, learnTechnique, learnSpell, FRAGMENT_NEED, toxinPenalty,
+  playerTitle, playerHp, playerAttack, playerDefense, playerSpeed, playerSense, playerMaxQi,
+  abodeOf, heartName, heartTier, mainElement, rootPurity,
+  coreQualityCap, coreBonus, spellLevel, spellPower,
+} from '../content.js';
+import { green, red, yellow, cyan, dim, magenta, bold } from '../colors.js';
+import { chance, randint, pick } from './rng.js';
 import { addBio, printBiography } from './text.js';
+import { combat, makeEnemy } from './combat.js';
 
 /** 闭关修炼一年，返回本年度修为增长。 */
 export function cultivate(p: Player): number {
@@ -15,6 +23,7 @@ export function cultivate(p: Player): number {
   const cultPct = sectOf(p)?.cultPct ?? 0; // 血煞魔宗/太虚阵宗等修炼加成
   gain *= 1 + (cultPct > 0 ? cultPct * sectPower(p) : cultPct);
   gain *= FORMATIONS[p.formation]?.cult ?? 1.0; // 聚灵阵等阵法加成
+  gain *= abodeOf(p.abode ?? '山中茅舍').speed / 100; // 洞府/灵脉：修炼快慢主要不看你是谁，看你在哪修
   if (p.daoCompanion) {
     let bonus = sectOf(p)?.dualBonus ?? 0.2; // 合欢宗双修加成
     if (bonus > 0.2) bonus *= sectPower(p);
@@ -32,11 +41,36 @@ export function cultivate(p: Player): number {
     p.spiritWarm -= 1;
   }
   gain = Math.max(1, gain);
-  p.cultivation = Math.min(100, p.cultivation + gain);
+  // 不在此处封顶：溢出的修为要留给 autoAdvance 结转到下一小阶
+  p.cultivation += gain;
   // 修行中打磨功法熟练度
   const prof = Math.min(100, (p.techProficiency[p.technique] ?? 0) + randint(2, 5));
   p.techProficiency[p.technique] = prof;
   return gain;
+}
+
+/**
+ * 小境界自动晋升。
+ * 初期→中期→后期→大圆满没有决策含量，不该让玩家回主菜单按一次「突破」再掷一次骰子；
+ * 修为满了就是满了，溢出的部分结转到下一小阶——一次长闭关可以连跨两三阶。
+ * 大圆满则停住不动：只有跨大境界才是真正的关口，那一步仍要玩家自己迈。
+ * 返回本次连跨了几阶。
+ */
+export function autoAdvance(p: Player, io: GameIO): number {
+  let steps = 0;
+  while (p.cultivation >= 100 && p.stageIdx < REALMS[p.realmIdx].stages.length - 1) {
+    p.cultivation -= 100;
+    p.stageIdx += 1;
+    p.heart = Math.min(100, p.heart + 1);
+    p.insight = (p.insight ?? 0) + 1;
+    steps += 1;
+    io.print(green(`　气机自然而然地松了一寸——你晋入 ${playerTitle(p)}。${dim('（悟道点 +1）')}`));
+  }
+  if (p.cultivation >= 100) {
+    p.cultivation = 100;
+    if (steps === 0) io.print(yellow('修为已臻圆满，可尝试冲击大境界瓶颈。'));
+  }
+  return steps;
 }
 
 /** 参悟残篇：集齐补全功法 / 无名残篇提升当前功法熟练度。返回是否消耗时间。 */
@@ -92,8 +126,9 @@ export async function comprehendFragments(state: GameState, io: GameIO): Promise
   }
 }
 
-function successRate(p: Player, big: boolean): number {
-  let base = big ? 0.5 : 0.85;
+/** 大境界突破成功率。小境界已改为自动晋升，不再掷骰，这里只管跨大境界那一步。 */
+function successRate(p: Player): number {
+  let base = 0.5;
   // 灵根越好成功率越高：天灵根(0) +0.10 … 五灵根(5) -0.15
   const idx = ROOTS.findIndex((r) => r.name === p.root);
   base += (2 - idx) * 0.05;
@@ -148,13 +183,68 @@ async function realmStory(p: Player, io: GameIO): Promise<void> {
   }
 }
 
-/** 尝试突破，返回是否成功。 */
-export async function breakthrough(p: Player, leads: FemaleLead[], io: GameIO): Promise<boolean> {
-  const big = p.stageIdx === REALMS[p.realmIdx].stages.length - 1;
-  const pillName = REALMS[p.realmIdx].breakPill;
-  let rate = successRate(p, big);
+/**
+ * 结丹：凝一枚金丹。
+ * 型由本命五行定，品由灵根纯度封顶——开局那次灵根测定，在两百年后又兑现了一次。
+ * 这不是选择题，是揭晓：你两百年前替自己选的路，现在报出分数。
+ */
+async function formGoldenCore(p: Player, io: GameIO): Promise<void> {
+  const elem = mainElement(p.roots);
+  const type = CORE_TYPES[elem];
+  const cap = coreQualityCap(rootPurity(p.roots));
+  // 心境与丹毒是临门一脚：定得住心的人，丹凝得圆
+  // 纯度既抬上限也抬下限：天灵根最差也有五品，五灵根最好也只到三品
+  let roll = randint(Math.ceil(cap / 2), cap);
+  if (heartTier(p.heart) >= 4 && roll < cap) roll += 1;
+  if ((p.pillToxin ?? 0) >= 60 && roll > 1) roll -= 1;
+  const quality = Math.max(1, Math.min(cap, roll));
+  p.goldenCore = { type: type.name, quality };
+  const b = coreBonus(quality);
+  io.print();
+  await io.narrate(magenta(`【结丹】${type.name} · ${CORE_QUALITY_NAMES[quality]}`));
+  await io.narrate(type.desc);
+  await io.narrate(dim(`灵根纯度封顶 ${CORE_QUALITY_NAMES[cap]}，你结出的是 ${CORE_QUALITY_NAMES[quality]}。`));
+  await io.narrate(green(`气血 +${Math.round(b.hpPct * 100)}%${b.qi > 0 ? `，每回合多聚 ${b.qi} 点灵气` : ''}。`));
+  if (quality >= cap) await io.narrate(yellow('凝到了你这副灵根能凝的极限。此后再想更进一步，只能另辟蹊径。'));
+  addBio(p, `结${type.name}·${CORE_QUALITY_NAMES[quality]}`);
+}
 
-  if (big && pillName) {
+/** 元婴：择一异象，此后每场战斗的资源循环都由它决定。 */
+async function chooseYuanying(p: Player, io: GameIO): Promise<void> {
+  io.print();
+  await io.narrate(magenta('【元婴异象】元婴既成，它睁眼看你的那一刻，你要替它选一条路。'));
+  YUANYING_VISIONS.forEach((v, i) => io.print(` ${i + 1}) ${cyan(v.name)}：${v.desc}`));
+  io.print(dim('  择定即不可改——元婴只结一次。'));
+  const nums = YUANYING_VISIONS.map((_, i) => String(i + 1));
+  const idx = parseInt(await io.ask('你的选择：', nums, '1'), 10) - 1;
+  const v = YUANYING_VISIONS[Math.max(0, Math.min(YUANYING_VISIONS.length - 1, idx))];
+  p.yuanying = v.name;
+  await io.narrate(green(`你的元婴自此带着「${v.name}」的相。${v.desc}`));
+  addBio(p, `元婴显「${v.name}」之相`);
+}
+
+/** 化神：以何入道。定流派，给专属仙法。 */
+async function chooseDaoPath(p: Player, io: GameIO): Promise<void> {
+  io.print();
+  await io.narrate(magenta('【入道】化神之境，须以一物为骨、一念为纲，从此万法归一。'));
+  DAO_PATHS.forEach((d, i) => io.print(` ${i + 1}) ${cyan(d.name)}：${d.desc}${dim(`（授《${d.spell}》）`)}`));
+  io.print(dim('  一生只入一道。'));
+  const nums = DAO_PATHS.map((_, i) => String(i + 1));
+  const idx = parseInt(await io.ask('你的选择：', nums, '1'), 10) - 1;
+  const d = DAO_PATHS[Math.max(0, Math.min(DAO_PATHS.length - 1, idx))];
+  p.daoPath = d.name;
+  learnSpell(p, d.spell);
+  await io.narrate(green(`${d.name}。${d.desc}`));
+  await io.narrate(green(`你于定中悟得 ${magenta(d.spell)}。`));
+  addBio(p, d.name);
+}
+
+/** 尝试冲击大境界瓶颈，返回是否成功。小境界不走这里——它自动晋升。 */
+export async function breakthrough(p: Player, leads: FemaleLead[], io: GameIO): Promise<boolean> {
+  const pillName = REALMS[p.realmIdx].breakPill;
+  let rate = successRate(p);
+
+  if (pillName) {
     if ((p.pills[pillName] ?? 0) > 0) {
       const use = await io.ask(`是否服用 ${yellow(pillName)} 辅助突破？(y/n，当前 ${p.pills[pillName]} 枚)`, ['y', 'n'], 'y');
       if (use === 'y') {
@@ -169,30 +259,30 @@ export async function breakthrough(p: Player, leads: FemaleLead[], io: GameIO): 
 
   rate = Math.max(0.01, Math.min(1, rate)); // 丹药/灵根等修正后仍应在 (0,1] 内，避免负成功率卡死或超 100%
 
-  await io.narrate(`你盘膝而坐，凝神聚气，冲击 ${green(playerTitle(p))} 的瓶颈……`);
+  await io.narrate(`你盘膝而坐，凝神聚气，冲击 ${green(REALMS[p.realmIdx + 1]?.name ?? '更高之境')} 的瓶颈……`);
   await io.narrate(`突破成功率：${yellow(`${(rate * 100).toFixed(0)}%`)}`);
 
   if (chance(rate)) {
     await io.narrate(green('轰！体内气机畅通，境界壁垒应声而破！'));
-    if (big) {
-      p.realmIdx += 1;
-      p.stageIdx = 0;
-      p.lifespan = REALMS[p.realmIdx].lifespan;
-      await io.narrate(`你成功突破至 ${green(REALMS[p.realmIdx].name)}！寿元延至 ${p.lifespan} 岁。`);
-      await realmStory(p, io);
-      addBio(p, `突破${REALMS[p.realmIdx].name}`);
-    } else {
-      p.stageIdx += 1;
-      await io.narrate(`你晋升至 ${green(playerTitle(p))}。`);
-    }
+    p.realmIdx += 1;
+    p.stageIdx = 0;
+    p.lifespan = REALMS[p.realmIdx].lifespan;
     p.cultivation = 0;
     p.heart = Math.min(100, p.heart + 5);
+    p.insight = (p.insight ?? 0) + 3; // 大境界给三点：悟道点全程给不满，只够点厚一两式
+    await io.narrate(`你成功突破至 ${green(REALMS[p.realmIdx].name)}！寿元延至 ${p.lifespan} 岁。${dim('（悟道点 +3）')}`);
+    await realmStory(p, io);
+    addBio(p, `突破${REALMS[p.realmIdx].name}`);
+    // 每个大境界一层新机制：结丹定品、元婴定引擎、化神定流派
+    if (p.realmIdx === 2 && !p.goldenCore) await formGoldenCore(p, io);
+    if (p.realmIdx === 3 && !p.yuanying) await chooseYuanying(p, io);
+    if (p.realmIdx === 4 && !p.daoPath) await chooseDaoPath(p, io);
     return true;
   } else {
     await io.narrate(red('灵气紊乱，心魔陡生！突破失败……'));
     const resist = sectOf(p)?.demonResist ?? false; // 净禅寺心魔抗性
     const lossHalf = sectOf(p)?.traitKey === 'breakLossHalf'; // 玄清门道基稳固
-    const cultLoss = lossHalf ? Math.floor((big ? 50 : 30) / 2) : big ? 50 : 30;
+    const cultLoss = lossHalf ? 25 : 50;
     p.cultivation = Math.max(0, p.cultivation - cultLoss);
     p.heart = Math.max(0, p.heart - (resist ? 5 : 10));
     if (!resist && chance(0.3)) {
@@ -200,6 +290,54 @@ export async function breakthrough(p: Player, leads: FemaleLead[], io: GameIO): 
       p.lifespan -= randint(5, 15);
     }
     return false;
+  }
+}
+
+/** 参悟神通：把悟道点砸进少数几式里。点不满，这才是取舍。 */
+export async function studySpells(p: Player, io: GameIO): Promise<boolean> {
+  p.spellLv ??= {};
+  const known = (p.spells ?? []).filter((s) => SPELLS[s]);
+  if (known.length === 0) {
+    io.print(red('你尚未习得任何神通。功法、坊市玉简、宗门藏经阁与机缘皆可得。'));
+    await io.pause();
+    return false;
+  }
+  while (true) {
+    await io.clear();
+    io.print(cyan('═══ 参悟神通 ═══'));
+    io.print(`悟道点：${yellow(String(p.insight ?? 0))}${dim('　（小境界晋升 +1，大境界突破 +3；全程给不满，只够点厚一两式）')}`);
+    known.forEach((s, i) => {
+      const d = SPELLS[s];
+      const lv = spellLevel(p, s);
+      const next = lv >= SPELL_MAX_LV ? dim('（圆满）') : `　升 ${lv + 1} 层需 ${SPELL_LV_COST[lv]} 点`;
+      io.print(` ${i + 1}) ${d.element}·${s} ${bold(`${lv} 层`)}（威力 ×${spellPower(lv).toFixed(2)}，耗气 ${d.cost}）${next}`);
+      io.print(dim(`    ${d.desc}`));
+    });
+    io.print(' 0) 返回');
+    const ch = await io.ask('参悟哪一式：');
+    if (ch === '0' || ch === '') return false;
+    const idx = parseInt(ch, 10);
+    if (isNaN(idx) || idx < 1 || idx > known.length) {
+      io.print(red('无效编号。'));
+      continue;
+    }
+    const name = known[idx - 1];
+    const lv = spellLevel(p, name);
+    if (lv >= SPELL_MAX_LV) {
+      io.print(yellow('此式已臻圆满，再参无益。'));
+      await io.pause();
+      continue;
+    }
+    const cost = SPELL_LV_COST[lv];
+    if ((p.insight ?? 0) < cost) {
+      io.print(red(`悟道点不足（需 ${cost}，当前 ${p.insight ?? 0}）。`));
+      await io.pause();
+      continue;
+    }
+    p.insight = (p.insight ?? 0) - cost;
+    p.spellLv[name] = lv + 1;
+    await io.narrate(green(`你于定中重演 ${magenta(name)} 千百遍，此式进至 ${lv + 1} 层（威力 ×${spellPower(lv + 1).toFixed(2)}，耗气仍是 ${SPELLS[name].cost}）。`));
+    return true;
   }
 }
 
@@ -270,17 +408,19 @@ export async function takePill(p: Player, io: GameIO): Promise<void> {
   }
 }
 
-/** 天劫成功率修正：一生的抉择，在最后一道雷前逐笔结算。 */
-function tribulationMods(p: Player): Array<{ text: string; delta: number }> {
+/**
+ * 天劫修正：一生的抉择，在最后一道雷前逐笔结算。
+ * 由「成功率加减」改为「雷威加减」——积累不再兑现成一次掷骰，而是兑现成你能不能扛住第九道雷。
+ */
+function tribulationMods(p: Player): Array<{ text: string; atk: number; shield: number }> {
   const f = (name: string) => (p.flags?.[name] ?? 0) >= 1;
-  const mods: Array<{ text: string; delta: number }> = [];
-  if (f('见天门')) mods.push({ text: '你曾于朔月之夜得窥天门虚影，雷落之路早已在心中走过一遍。', delta: 0.05 });
-  if (f('渡口')) mods.push({ text: '浮玉渡口灵阵轰鸣，聚灵引雷，为你分去了三成雷威。', delta: 0.05 });
-  if (f('消业')) mods.push({ text: '四十九日散财消业没有白费——雷云翻涌，却似欠了三分狠意。', delta: 0.05 });
-  if (f('佛魔一念')) mods.push({ text: '佛魔一念，心台无尘。心魔劫于你形同虚设。', delta: 0.05 });
-  if (f('骨愿')) mods.push({ text: '心口那截指骨微微发烫——三千年前折在雷下的人，此刻与你同行。', delta: 0.03 });
-  if (f('天忌')) mods.push({ text: '无生魔主的旧账终究记在了你头上——雷云比常例厚了三重，劫上加劫！', delta: -0.1 });
-  if (f('丹疾')) mods.push({ text: '深埋道基的丹毒灰翳在雷光下无所遁形，成了劫雷最好的下口之处。', delta: -0.05 });
+  const mods: Array<{ text: string; atk: number; shield: number }> = [];
+  if (f('见天门')) mods.push({ text: '你曾于朔月之夜得窥天门虚影，雷落之路早已在心中走过一遍。', atk: -0.08, shield: 0 });
+  if (f('渡口')) mods.push({ text: '浮玉渡口灵阵轰鸣，聚灵引雷，为你分去了三成雷威。', atk: -0.08, shield: 0.1 });
+  if (f('消业')) mods.push({ text: '四十九日散财消业没有白费——雷云翻涌，却似欠了三分狠意。', atk: -0.08, shield: 0 });
+  if (f('骨愿')) mods.push({ text: '心口那截指骨微微发烫——三千年前折在雷下的人，此刻与你同行。', atk: -0.05, shield: 0.1 });
+  if (f('天忌')) mods.push({ text: '无生魔主的旧账终究记在了你头上——雷云比常例厚了三重，劫上加劫！', atk: 0.18, shield: 0 });
+  if (f('丹疾')) mods.push({ text: '深埋道基的丹毒灰翳在雷光下无所遁形，成了劫雷最好的下口之处。', atk: 0.08, shield: 0 });
   return mods;
 }
 
@@ -314,7 +454,12 @@ function epilogueLines(state: GameState): string[] {
   return lines;
 }
 
-/** 渡劫飞升结局，返回是否成仙。 */
+/**
+ * 渡劫飞升结局，返回是否成仙。
+ * 不再是一次 chance(0.7)——两百年的积累，要在两场带规则的战斗里自己兑现：
+ *   一、心魔劫：对手是你自己，禁丹药法宝，心境是你唯一的护甲；
+ *   二、九重雷劫：打不死它，只能撑满九道雷。
+ */
 export async function ascend(state: GameState, io: GameIO): Promise<boolean> {
   const p = state.player;
   const leads = state.leads;
@@ -338,15 +483,94 @@ export async function ascend(state: GameState, io: GameIO): Promise<boolean> {
     await io.narrate('「生同衾，死同穴。」掌心相抵，两道气机合而为一。');
   }
 
-  // 一生抉择的结算
-  let rate = 0.7 + (hasCompanion ? 0.1 : 0);
-  for (const m of tribulationMods(p)) {
-    await io.narrate(m.delta >= 0 ? dim(m.text) : red(m.text));
-    rate += m.delta;
-  }
-  rate = Math.max(0.05, Math.min(0.95, rate));
+  const maxHp = playerHp(p);
 
-  if (hasPill || chance(rate)) {
+  // ———— 第一场：心魔劫 ————
+  let heartHeld = true;
+  if ((p.flags?.['佛魔一念'] ?? 0) >= 1) {
+    await io.narrate(dim('佛魔一念，心台无尘。心魔劫于你形同虚设——雷云之下，你连一个念头都没有多起。'));
+  } else {
+    io.print();
+    await io.narrate(magenta('【心魔劫】雷云未落，你先看见了自己——一模一样的眉眼，一模一样的道袍，站在三步之外。'));
+    await io.narrate('「这些年你走的路，」它说，「我都在。」');
+    // 心境是这一场唯一的护甲：一辈子的修养，在此刻兑现成一层实打实的罩子
+    const tier = heartTier(p.heart);
+    const shield = Math.round(maxHp * tier * 0.08);
+    if (shield > 0) {
+      await io.narrate(green(`你此生心境「${heartName(p.heart)}」，一层清光自内而外浮起，罩住周身（护罩 ${shield}）。`));
+    } else {
+      await io.narrate(red('你心中杂念丛生，护不住自己——心境「心猿意马」，无光可护。'));
+    }
+    // 心魔就是你：同样的灵根、同样的牌组、同样的层数——「这些年你走的路，我都在。」
+    const mirror = makeEnemy(p, { kind: '修士', foe: `心魔 · ${p.name}` });
+    mirror.realm = playerTitle(p);
+    mirror.element = mainElement(p.roots);
+    mirror.roots = { ...p.roots };
+    mirror.kind = '心魔';
+    mirror.maxHp = Math.round(maxHp * 0.9);
+    mirror.hp = mirror.maxHp;
+    mirror.atk = Math.round(playerAttack(p) * 0.9);
+    mirror.def = playerDefense(p);
+    mirror.spd = playerSpeed(p);
+    mirror.sense = playerSense(p);
+    mirror.qi = 3;
+    mirror.maxQi = playerMaxQi(p);
+    mirror.deck = [...(p.spells ?? [])];
+    mirror.spellLv = { ...(p.spellLv ?? {}) };
+    mirror.loot = 0;
+    const r = await combat(p, leads, io, {
+      fight: '心魔', enemy: mirror, title: '心魔劫', preShield: shield,
+      intro: '{enemy}抬起手，做了一个你做过千百遍的起手式。',
+    });
+    heartHeld = r === 'win';
+    if (heartHeld) {
+      await io.narrate(green('那道身影散了。散之前，它冲你点了点头——像是终于认了。'));
+    } else {
+      await io.narrate(red('你没能压住它。神魂被撕开一道口子，血从七窍里渗出来——雷还没落，你已经先输了半场。'));
+    }
+  }
+
+  // ———— 第二场：九重雷劫 ————
+  io.print();
+  await io.narrate(magenta('【九重雷劫】云开了一线。第一道雷已经在酝酿。'));
+
+  let atkMult = 0.7;   // 九道雷的总伤略高于「满血 + 一层护罩」，逼你在场上再想办法
+  let shieldPct = hasCompanion ? 0.2 : 0;
+  for (const m of tribulationMods(p)) {
+    await io.narrate(m.atk <= 0 ? dim(m.text) : red(m.text));
+    atkMult *= 1 + m.atk;
+    shieldPct += m.shield;
+  }
+  if (hasCompanion) await io.narrate(green('两道气机合流，道侣以身替你分去了一部分雷威。'));
+  if (hasPill) { atkMult *= 0.85; shieldPct += 0.5; }
+  if (!heartHeld) shieldPct = Math.max(0, shieldPct - 0.2);
+
+  const bolt = makeEnemy(p, { kind: '修士', foe: '九天雷劫' });
+  bolt.realm = '天罚';
+  bolt.element = '金';
+  bolt.kind = '天劫';
+  bolt.maxHp = 1;
+  bolt.hp = 1;
+  bolt.immortal = true;      // 打不死它。你只能撑过去。
+  bolt.atk = Math.round(playerAttack(p) * atkMult);
+  bolt.def = 999999;
+  bolt.spd = 99;             // 遁速无穷：躲不掉，也逃不掉
+  bolt.sense = 0;
+  bolt.qi = 0;
+  bolt.maxQi = 0;
+  bolt.deck = [];            // 天劫不施法，它只是落下来
+  bolt.atkGrowth = 1.15;     // 一雷重过一雷
+  bolt.pierce = 0.5;         // 天雷无视半数防御
+  bolt.loot = 0;
+
+  const survived = await combat(p, leads, io, {
+    fight: '天劫', enemy: bolt, title: '九重雷劫',
+    preShield: Math.round(maxHp * shieldPct),
+    startHpPct: heartHeld ? 100 : 55,
+    intro: '{enemy}压城而下。你抬起头——从今往后，只剩九个回合。',
+  });
+
+  if (survived === 'win') {
     await io.narrate('第一道雷落下时，你脚下的孤峰断了一角。');
     await io.narrate('第四道雷落下时，你的法宝碎了，护体灵光碎了，只剩一口气还擎着。');
     await io.narrate('第九道雷落下时——你还站着。');

@@ -19,7 +19,10 @@ const PURSUIT_EVENT: ExploreEvent = {
   name: '旧宗追兵',
   weight: 12,
   run: async (p, state, io) => {
-    await combat(p, state.leads, io, `你叛出 ${red(p.betrayedSect ?? '旧宗')} 的消息走漏，追兵杀至——正是 {enemy}！`);
+    await combat(p, state.leads, io, {
+      intro: `你叛出 ${red(p.betrayedSect ?? '旧宗')} 的消息走漏，追兵杀至——正是 {enemy}！`,
+      kind: '同门', title: '旧宗追杀',
+    });
   },
 };
 

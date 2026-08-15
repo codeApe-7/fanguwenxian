@@ -7,7 +7,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { REALMS, TREASURES, PILLS, incomeScale, playerTitle } from '../content.js';
+import { REALMS, TREASURES, PILLS, incomeScale, playerTitle, betterTreasures, treasureSummary } from '../content.js';
 import { LETTERS } from '../content/letters.js';
 import { applyStoryEffects } from './storyline.js';
 import { dialogueOf } from '../content/dialogue.js';
@@ -55,7 +55,13 @@ export const WORLD_EVENTS: WorldEventDef[] = [
         io.print(dim('你在台下看了半日热闹，各自散去。'));
         return;
       }
-      const r = await combat(p, state.leads, io, '擂台之上，与你对阵的同辈天骄气势如虹——正是 {enemy}！');
+      const r = await combat(p, state.leads, io, {
+        intro: '擂台之上，与你对阵的同辈天骄气势如虹——正是 {enemy}！',
+        kind: '天骄',
+        fight: '擂台',
+        noItems: true, // 英杰会同例：解去丹药法器登台
+        title: '青崖英杰会 · 擂台',
+      });
       if (r === 'win') {
         const reward = 120 * incomeScale(p.realmIdx);
         p.spirit += reward;
@@ -83,12 +89,11 @@ export const WORLD_EVENTS: WorldEventDef[] = [
       const vip = (p.flags['百宝贵客'] ?? 0) >= 1;
       const rate = vip ? 0.7 : 0.8;
       // 拍品一：优于现有的法宝
-      const curAtk = TREASURES[p.treasure]?.atk ?? 0;
-      const better = Object.keys(TREASURES).filter((t) => TREASURES[t].atk > curAtk);
+      const better = betterTreasures(p);
       if (better.length > 0) {
         const t = pick(better);
         const price = Math.floor(TREASURES[t].price * rate);
-        io.print(`压轴拍品：法宝 ${cyan(t)}（攻+${TREASURES[t].atk} 防+${TREASURES[t].def}），落槌价约 ${price} 灵石${vip ? dim('（贵客青帖让利）') : ''}。`);
+        io.print(`压轴拍品：法宝 ${cyan(t)}（${treasureSummary(t)}），落槌价约 ${price} 灵石${vip ? dim('（贵客青帖让利）') : ''}。`);
         if (p.spirit >= price) {
           const ch = await io.ask(`出价 ${price} 灵石竞拍？(y/n)`, ['y', 'n'], 'n');
           if (ch === 'y') {
@@ -148,7 +153,10 @@ export const WORLD_EVENTS: WorldEventDef[] = [
       const choices = evil ? ['1', '2', '3'] : ['1', '2'];
       const ch = await io.ask('你的选择：', choices, '2');
       if (ch === '1') {
-        const r = await combat(p, state.leads, io, '御魔前线，一名魔将裹着尸气当面撞阵——正是 {enemy}！', 1);
+        const r = await combat(p, state.leads, io, {
+          intro: '御魔前线，一名魔将裹着尸气当面撞阵——正是 {enemy}！',
+          boost: 1, kind: '魔修', title: '玄阴魔乱 · 御魔前线',
+        });
         if (r === 'win') {
           const reward = 200 * incomeScale(p.realmIdx);
           p.spirit += reward;
@@ -161,7 +169,10 @@ export const WORLD_EVENTS: WorldEventDef[] = [
           await io.narrate(red('前线失利，你负伤随军后撤。乱世刀兵，几人全身。'));
         }
       } else if (ch === '3') {
-        const r = await combat(p, state.leads, io, '你趁乱潜入一座被弃的坊市宝库，一名同样来「取利」的魔修拦路——正是 {enemy}！', 1);
+        const r = await combat(p, state.leads, io, {
+          intro: '你趁乱潜入一座被弃的坊市宝库，一名同样来「取利」的魔修拦路——正是 {enemy}！',
+          boost: 1, kind: '魔修', title: '玄阴魔乱 · 空城取利',
+        });
         if (r === 'win') {
           const loot = 400 * incomeScale(p.realmIdx);
           p.spirit += loot;
@@ -197,7 +208,10 @@ export const WORLD_EVENTS: WorldEventDef[] = [
         return;
       }
       await io.narrate('你随灵潮沉入海眼。水下别有洞天：陨星残骸悬浮如林，星髓的清辉里游着通体透明的鱼。');
-      const r = await combat(p, state.leads, io, '星骸林深处，一头以星髓为食的凶物睁开了眼——正是 {enemy}！', 1);
+      const r = await combat(p, state.leads, io, {
+        intro: '星骸林深处，一头以星髓为食的凶物睁开了眼——正是 {enemy}！',
+        boost: 1, kind: '妖兽', title: '沉星海眼 · 星骸林',
+      });
       if (r === 'win') {
         p.fragments['造化长生经'] = (p.fragments['造化长生经'] ?? 0) + 1;
         p.materials['灵石精'] = (p.materials['灵石精'] ?? 0) + 3;

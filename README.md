@@ -45,14 +45,15 @@ src/
     dialogue.ts     性格×场景对白矩阵（8 性格 × 13 场景）
     letters.ts      传音信件库
     tasks.ts        宗门任务库（三层文案）
+    spells.ts       神通库（71 式：五行/品阶/灵气消耗/效果组合/画面描写）
   core/             调度与逻辑层（不依赖终端）
     storyline.ts    主线调度器（触发窗/flag/错过反馈）
     chronicle.ts    世界纪事 + 传音投递管道
     text.ts         占位符填充/高亮/纪年/大事记
     rng.ts          随机工具
     character.ts    角色生成、测灵根
-    cultivate.ts    修炼、突破、飞升与结局收束
-    combat.ts       战斗（法宝/符箓/神通）
+    cultivate.ts    修炼、小境界自动晋升、大境界突破（金丹/元婴/入道）、渡劫与结局收束
+    combat.ts       战斗引擎（灵气/后继无力/五行三乘区/效果组合/规则开关/面板）
     explore.ts      游历、随机事件调度
     events.ts       游历事件表（61 个事件，剧本/flag 感知）
     market.ts       坊市
@@ -62,6 +63,7 @@ src/
     engine.ts       主循环、菜单、编排
 docs/
   剧情引擎与文案设计.md   调度层设计、文案规范与扩展指南
+  战斗与数值设计.md       成长曲线、五行、神通库、战斗引擎与三层境界机制
 playtest.ts         自动通关驱动器（文案 QA）
 ```
 

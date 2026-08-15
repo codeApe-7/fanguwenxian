@@ -8,7 +8,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { MATERIALS, TREASURES, TECHNIQUES, REALMS, ROOTS, sectOf, sectPower, upgradeTechnique, playerTitle, incomeScale } from '../content.js';
+import { MATERIALS, TREASURES, TECHNIQUES, REALMS, ROOTS, sectOf, sectPower, upgradeTechnique, playerTitle, incomeScale, betterTreasures, treasureSummary } from '../content.js';
 import { PLACES, TOWNS } from '../content/world.js';
 import { dialogueOf } from '../content/dialogue.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
@@ -89,8 +89,7 @@ function upgradeRoot(p: Player): string | null {
 
 /** 法宝提升一档，返回新法宝名（已最强则 null）。 */
 function upgradeTreasure(p: Player): string | null {
-  const curAtk = TREASURES[p.treasure]?.atk ?? 0;
-  const better = Object.keys(TREASURES).filter((t) => TREASURES[t].atk > curAtk);
+  const better = betterTreasures(p);
   if (better.length === 0) return null;
   const t = pick(better);
   p.treasure = t;
@@ -363,19 +362,28 @@ export const EVENTS: ExploreEvent[] = [
   {
     name: '妖兽袭击', weight: 4,
     run: async (p, state, io) => {
-      await combat(p, state.leads, io, fill('行至{place}，林间鸦雀骤然噤声——凶险！拦路的正是 {enemy}！', { place: pick(PLACES) }));
+      await combat(p, state.leads, io, {
+        intro: fill('行至{place}，林间鸦雀骤然噤声——凶险！拦路的正是 {enemy}！', { place: pick(PLACES) }),
+        kind: '妖兽', title: '山道遭遇',
+      });
     },
   },
   {
     name: '魔修截杀', weight: 2,
     run: async (p, state, io) => {
-      await combat(p, state.leads, io, fill('{place}道上，一股阴冷杀气自背后锁定于你，来者正是 {enemy}！', { place: pick(PLACES) }));
+      await combat(p, state.leads, io, {
+        intro: fill('{place}道上，一股阴冷杀气自背后锁定于你，来者正是 {enemy}！', { place: pick(PLACES) }),
+        kind: '修士', title: '背后杀气',
+      });
     },
   },
   {
     name: '夺宝仇家', weight: 2,
     run: async (p, state, io) => {
-      await combat(p, state.leads, io, '你身怀重宝的消息不知被谁走漏，{enemy} 循味寻上门来！');
+      await combat(p, state.leads, io, {
+        intro: '你身怀重宝的消息不知被谁走漏，{enemy} 循味寻上门来！',
+        kind: '修士', title: '劫宝之徒',
+      });
     },
   },
   {
@@ -384,7 +392,10 @@ export const EVENTS: ExploreEvent[] = [
       await scene(io, '【游历·邪修诱骗】{place}茶肆里凑过来一个热络的修士，压低声音说他探得一处上古密藏，只差一位「有缘道友」搭手。');
       const ch = await io.ask('是否识破其诡计？(y/n)', ['y', 'n'], 'y');
       if (ch === 'y') {
-        await combat(p, state.leads, io, '你冷笑点破他话里的三处破绽。邪修见事败，眼露凶光，与埋伏的 {enemy} 一并杀出！');
+        await combat(p, state.leads, io, {
+          intro: '你冷笑点破他话里的三处破绽。邪修见事败，眼露凶光，与埋伏的 {enemy} 一并杀出！',
+          kind: '修士', title: '识破骗局',
+        });
       } else {
         const loss = Math.min(p.spirit, randint(100, 300));
         loseSpirit(p, loss);
@@ -396,17 +407,26 @@ export const EVENTS: ExploreEvent[] = [
   {
     name: '兽潮', weight: 2,
     run: async (p, state, io) => {
-      await combat(p, state.leads, io, fill('{place}方向烟尘蔽日，兽吼连成一片——兽潮过境！冲在最前的 {enemy} 已扑至眼前！', { place: pick(PLACES) }));
+      await combat(p, state.leads, io, {
+        intro: fill('{place}方向烟尘蔽日，兽吼连成一片——兽潮过境！冲在最前的 {enemy} 已扑至眼前！', { place: pick(PLACES) }),
+        kind: '妖兽', title: '兽潮过境',
+      });
     },
   },
   {
     name: '旧怨寻仇', weight: 2,
     run: async (p, state, io) => {
       if (p.scenario === '世家贵子' && flagOf(p, '厉氏覆灭') >= 1) {
-        await combat(p, state.leads, io, '阴风堡虽灭，余孽未绝——一名漏网的厉氏死士红着眼寻来，正是 {enemy}！');
+        await combat(p, state.leads, io, {
+          intro: '阴风堡虽灭，余孽未绝——一名漏网的厉氏死士红着眼寻来，正是 {enemy}！',
+          kind: '魔修', title: '阴风堡余孽',
+        });
         return;
       }
-      await combat(p, state.leads, io, '冤家路窄。多年前的一桩旧怨循迹而至——正是 {enemy}！');
+      await combat(p, state.leads, io, {
+        intro: '冤家路窄。多年前的一桩旧怨循迹而至——正是 {enemy}！',
+        kind: '修士', title: '旧怨寻仇',
+      });
     },
   },
 
@@ -501,7 +521,10 @@ export const EVENTS: ExploreEvent[] = [
         addMat(p, pick(Object.keys(MATERIALS)));
         await io.narrate(green('禁制已朽，一推即开。府中主人早去，灵石灵材倒是留了满架——你满载而归！'));
       } else {
-        await combat(p, state.leads, io, '你方跨过门槛，禁制骤然回光返照——守府之物 {enemy} 自阴影中扑出！');
+        await combat(p, state.leads, io, {
+          intro: '你方跨过门槛，禁制骤然回光返照——守府之物 {enemy} 自阴影中扑出！',
+          kind: '妖兽', title: '古府守物',
+        });
       }
     },
   },
@@ -546,8 +569,7 @@ export const EVENTS: ExploreEvent[] = [
   {
     name: '拍卖会', weight: 2,
     run: async (p, _s, io) => {
-      const curAtk = TREASURES[p.treasure]?.atk ?? 0;
-      const better = Object.keys(TREASURES).filter((k) => TREASURES[k].atk > curAtk);
+      const better = betterTreasures(p);
       if (better.length === 0) {
         await scene(io, '【游历·拍卖会】{town}坊市小拍开槌，你从头听到尾——皆是凡品，没有入你法眼之物。');
         return;
@@ -613,7 +635,10 @@ export const EVENTS: ExploreEvent[] = [
         addMat(p, pick(Object.keys(MATERIALS)), randint(1, 2));
         await io.narrate(green('秘境之内灵气醇厚如酒，天材地宝俯拾皆是——你盘桓月余，满载而归！'));
       } else {
-        await combat(p, state.leads, io, '秘境岂有无主之理——镇守此地的 {enemy} 咆哮着扑杀而来！');
+        await combat(p, state.leads, io, {
+          intro: '秘境岂有无主之理——镇守此地的 {enemy} 咆哮着扑杀而来！',
+          kind: '妖兽', title: '秘境镇守',
+        });
       }
     },
   },

@@ -8,7 +8,7 @@ import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
 import { STORY_NODES, SCENARIO_HEROINES } from '../content/story.js';
 import type { StoryEffects, StoryNode, FlagReq } from '../content/story.js';
-import { playerTitle, learnTechnique, TREASURES } from '../content.js';
+import { playerTitle, learnTechnique, TREASURES, treasureTier } from '../content.js';
 import { PLACES } from '../content/world.js';
 import { magenta, yellow } from '../colors.js';
 import { fill, addBio } from './text.js';
@@ -68,9 +68,9 @@ export function applyStoryEffects(state: GameState, e?: StoryEffects): string | 
   if (e.fragment) p.fragments[e.fragment] = (p.fragments[e.fragment] ?? 0) + 1;
   if (e.treasure) {
     // 剧情所得法宝：优于现有则换装，否则折价变卖
-    const cur = TREASURES[p.treasure]?.atk ?? 0;
+    const cur = treasureTier(p);
     const got = TREASURES[e.treasure];
-    if (got && got.atk > cur) p.treasure = e.treasure;
+    if (got && got.tier > cur) p.treasure = e.treasure;
     else if (got) p.spirit += Math.floor(got.price / 2);
   }
   if (e.heroine) introduceHeroine(state, e.heroine);
@@ -179,7 +179,13 @@ export async function maybeTriggerStory(state: GameState, io: GameIO): Promise<b
     for (const r of choice.result) await io.narrate(fill(r, c));
     if (choice.combat) {
       const cb = choice.combat;
-      const outcome = await combat(p, state.leads, io, cb.intro, cb.boost ?? 0);
+      const outcome = await combat(p, state.leads, io, {
+        intro: cb.intro,
+        boost: cb.boost ?? 0,
+        kind: cb.kind ?? '妖兽',
+        foe: cb.foe,
+        title: `【主线】${node.title}`,
+      });
       if (outcome === 'win') {
         for (const t of cb.winText) await io.narrate(fill(t, c));
         loggedInEffects = applyStoryEffects(state, cb.winEffects);

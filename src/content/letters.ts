@@ -59,7 +59,10 @@ export const LETTERS: LetterDef[] = [
       io.print(' 2) 按兵不动');
       const ch = await io.ask('你的选择：', ['1', '2'], '1');
       if (ch === '1') {
-        const r = await combat(p, state.leads, io, `你赶到绝谷，围困${lead.name}的强敌转身迎来——正是 {enemy}！`, 1);
+        const r = await combat(p, state.leads, io, {
+          intro: `你赶到绝谷，围困${lead.name}的强敌转身迎来——正是 {enemy}！`,
+          boost: 1, kind: '修士', title: `驰援 · ${lead.name}`,
+        });
         if (r === 'win') {
           await io.narrate(fill(dialogueOf(lead.personality).rescued, { name: p.name, her: lead.name }));
           lead.favor = Math.min(100, lead.favor + 15);
@@ -166,7 +169,10 @@ export const LETTERS: LetterDef[] = [
       io.print(' 2) 置之不理');
       const ch = await io.ask('你的选择：', ['1', '2'], '1');
       if (ch === '1') {
-        const r = await combat(p, state.leads, io, '洗剑池畔，无名剑客长身而立，拔剑出鞘——正是 {enemy}！', 1);
+        const r = await combat(p, state.leads, io, {
+          intro: '洗剑池畔，无名剑客长身而立，拔剑出鞘——正是 {enemy}！',
+          boost: 1, foe: '无名剑客', arena: '切磋', title: '洗剑池之约',
+        });
         if (r === 'win') {
           const loot = 150 * incomeScale(p.realmIdx);
           p.spirit += loot;
@@ -174,7 +180,10 @@ export const LETTERS: LetterDef[] = [
           await io.narrate(green(`剑客败退，留下佩剑抵作彩头。你变卖得 ${loot} 灵石，江湖名号又响三分。`));
           addBio(p, '洗剑池应战无名剑客，胜之');
         } else {
-          await io.narrate(yellow('技不如人，你交出随身灵石，拱手认负。剑客抱拳还礼：「承让。江湖再会。」'));
+          // 「败者留物」是约定，不是战败惩罚——故在此处兑现，不走战斗的夺石逻辑
+          const forfeit = Math.min(p.spirit, 150 * incomeScale(p.realmIdx));
+          p.spirit -= forfeit;
+          await io.narrate(yellow(`技不如人。你依约留下 ${forfeit} 灵石，拱手认负。剑客抱拳还礼：「承让。江湖再会。」`));
         }
       } else {
         p.heart = Math.max(0, p.heart - 2);

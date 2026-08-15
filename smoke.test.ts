@@ -3,7 +3,8 @@
 
 import type { GameIO } from './src/io.js';
 import type { GameState, FemaleLead } from './src/types.js';
-import { ORIGINS, SECTS, REALMS, SCENARIOS, ARCHETYPES, ROOT_COSTS, TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SKILLS, PERSONALITY_MODS, PERSONALITIES, TECHNIQUES, TREASURES, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, techniqueSummary, upgradeTechnique } from './src/content.js';
+import type { FoeKind } from './src/content.js';
+import { ORIGINS, SECTS, REALMS, SCENARIOS, ARCHETYPES, ROOT_COSTS, TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SKILLS, PERSONALITY_MODS, PERSONALITIES, TECHNIQUES, TREASURES, ENEMY_POOLS, ELEMENTS, SHENG, KE, SPELLS, SPELL_LV_MULT, SPELL_LV_COST, SPELL_MAX_LV, FATIGUE, REALM_STEP, STARTER_SPELLS, CORE_TYPES, mainElement, talentsFor, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, playerHp, playerSpeed, powerOf, rootsFor, rootPurity, coreQualityCap, coreBonus, techniqueSummary, upgradeTechnique } from './src/content.js';
 import { STORY_NODES, SCENARIO_HEROINES } from './src/content/story.js';
 import { DIALOGUE } from './src/content/dialogue.js';
 import { LETTERS } from './src/content/letters.js';
@@ -15,7 +16,7 @@ import { maybeTriggerStory } from './src/core/storyline.js';
 import { WORLD_EVENTS, worldTick, nextWorldEvent } from './src/core/chronicle.js';
 import { fill, eraYear, yearOfAge } from './src/core/text.js';
 import { sectMenu, sectYearEnd } from './src/core/sect.js';
-import { cultivate, breakthrough, takePill, ascend, comprehendFragments } from './src/core/cultivate.js';
+import { cultivate, breakthrough, takePill, ascend, comprehendFragments, autoAdvance } from './src/core/cultivate.js';
 import { makeEnemy, combat } from './src/core/combat.js';
 import { explore } from './src/core/explore.js';
 import { EVENTS } from './src/core/events.js';
@@ -26,11 +27,16 @@ import { romance, leadDescription, advanceLeads } from './src/core/romance.js';
 class MockIO implements GameIO {
   answer: string | null = null;
   queue: string[] = [];  // 顺序作答队列（优先于 answer）
-  log: string[] = [];    // print 输出记录（供断言）
-  clear() {}
-  print(_t = '') { this.log.push(_t); }
+  log: string[] = [];    // print 输出记录（战斗中会随重绘清空，供菜单解析）
+  full: string[] = [];   // 全量记录，永不清空（供断言）
+  asks: string[] = [];   // 提问记录（供断言：菜单里有没有某个选项）
+  clear() { if (this.decide) this.log = []; }
+  print(_t = '') { this.log.push(_t); this.full.push(_t); }
   async narrate(_t: string) {}
+  decide: ((q: string) => string | null) | null = null; // 可插拔的作答策略（战斗用）
   async ask(_q: string, choices?: string[], def?: string) {
+    this.asks.push(_q);
+    if (this.decide) { const a = this.decide(_q); if (a !== null) return a; }
     if (this.queue.length > 0) return this.queue.shift()!;
     if (this.answer !== null) return this.answer;
     return def ?? choices?.[0] ?? '';
@@ -73,6 +79,41 @@ async function main() {
   assert(Object.keys(TECHNIQUES).length >= 50, `功法库至少 50 门（当前 ${Object.keys(TECHNIQUES).length} 门）`);
   assert(SECTS.length >= 8, `宗门至少 8 个（当前 ${SECTS.length}）`);
 
+  console.log('· 出生 × 经历一致性（孤儿不该有家世可败落）');
+  assert(ORIGINS.every((o) => o.tags.length > 0), '每种出身都打了标签');
+  for (const o of ORIGINS) {
+    const kids = talentsFor(TALENT_CHILDHOODS, o);
+    const youths = talentsFor(TALENT_YOUTHS, o);
+    assert(kids.length >= 8, `${o.name} 的儿时经历至少 8 项（当前 ${kids.length}）`);
+    assert(youths.length >= 8, `${o.name} 的青年经历至少 8 项（当前 ${youths.length}）`);
+    // 免费缺省项必须对所有出身成立，否则加点循环的初值就是非法的
+    assert(kids.some((t) => t.cost === 0), `${o.name} 仍可选中性的免费儿时经历`);
+    assert(youths.some((t) => t.cost === 0), `${o.name} 仍可选中性的免费青年经历`);
+  }
+  const orphan = ORIGINS.find((o) => o.name === '山村孤儿')!;
+  const orphanKids = talentsFor(TALENT_CHILDHOODS, orphan).map((t) => t.name);
+  const orphanYouths = talentsFor(TALENT_YOUTHS, orphan).map((t) => t.name);
+  assert(!orphanKids.includes('家道中落'), '孤儿看不到「家道中落」');
+  assert(!orphanKids.includes('诗书启蒙'), '孤儿看不到「诗书启蒙」');
+  assert(!orphanYouths.includes('惨遭退婚'), '孤儿看不到「惨遭退婚」');
+  assert(orphanKids.includes('乞食街头'), '孤儿有专属的清贫经历可选');
+  const noble = ORIGINS.find((o) => o.name === '书香门第')!;
+  assert(talentsFor(TALENT_CHILDHOODS, noble).map((t) => t.name).includes('诗书启蒙'), '书香门第可选「诗书启蒙」');
+
+  console.log('· 敌人按战斗类型取名（擂台上不该站着妖兽）');
+  for (const kind of ['妖兽', '修士', '魔修'] as const) {
+    assert(ENEMY_POOLS[kind].length === 3, `${kind} 分三档`);
+    assert(ENEMY_POOLS[kind].every((tier) => tier.length > 0), `${kind} 每档非空`);
+  }
+  const beastPool = ENEMY_POOLS['妖兽'].flat();
+  assert(makeEnemy(p, { kind: '妖兽' }).name.length > 0, '妖兽取名成功');
+  for (let i = 0; i < 30; i++) {
+    const tianjiao = makeEnemy(p, { kind: '天骄' });
+    assert(!beastPool.includes(tianjiao.name), `天骄不能取妖兽名（取到 ${tianjiao.name}）`);
+    assert(tianjiao.realm.length > 0, '对手带境界，供面板显示');
+  }
+  assert(makeEnemy(p, { foe: '无名剑客' }).name === '无名剑客', 'foe 指名道姓优先于取名池');
+
   console.log('· 文本工具（占位符 / 高亮 / 纪年）');
   assert(fill('{a}与{b}', { a: '甲', b: '乙' }) === '甲与乙', '占位符填充');
   assert(fill('{a}', {}) === '{a}', '未提供的占位符原样保留');
@@ -94,6 +135,26 @@ async function main() {
   io.queue = ['', '1', '1', '0', '9']; // 姓名/剧本/角色设定默认 → 加点完成 → 宗门第 9 个（血煞魔宗）
   const magicFresh = await createCharacter(io);
   assert(magicFresh.player.sect === '血煞魔宗', '开局可拜入魔道宗门（全门派可选）');
+
+  {
+    // 先选书香门第 + 诗书启蒙，再改投山村孤儿——不符的经历必须自动退回中性缺省
+    const scholarIdx = ORIGINS.findIndex((o) => o.name === '书香门第') + 1;
+    const orphanIdx = ORIGINS.findIndex((o) => o.name === '山村孤儿') + 1;
+    const scholarKids = talentsFor(TALENT_CHILDHOODS, ORIGINS[scholarIdx - 1]);
+    const bookIdx = scholarKids.findIndex((t) => t.name === '诗书启蒙') + 1;
+    io.queue = [
+      '', '1', '4',                       // 姓名/剧本/角色设定（红尘众生，点数够用）
+      '1', String(scholarIdx),             // 出生 → 书香门第
+      '6', String(bookIdx),                // 儿时经历 → 诗书启蒙（创角菜单：4=本命五行，故儿时是 6）
+      '1', String(orphanIdx),              // 出生 → 山村孤儿（诗书启蒙就此失效）
+      '0', '1',                            // 完成 → 宗门
+    ];
+    const switched = await createCharacter(io);
+    assert(switched.player.origin === '山村孤儿', '出身改投成功');
+    // 山村孤儿 heart 基准 60；若「诗书启蒙」还赖着不走，会多出 +8
+    assert(switched.player.heart === 60, `改投后旧出身的经历不再生效（心境 ${switched.player.heart}）`);
+    assert(io.log.some((l) => plain(l).includes('与山村孤儿的出身不符，已重置')), '改投时提示经历已重置');
+  }
 
   console.log('· 主线节点库结构');
   {
@@ -395,9 +456,11 @@ async function main() {
   await comprehendFragments(fragState, io);
   assert((fragP.techProficiency['玄霜诀'] ?? 0) === 40, '无名残篇提升当前功法熟练度 +10');
 
-  console.log('· 神通（功法附带）');
+  console.log('· 神通（本命五行入门一式 + 功法附带）');
   const spellP = createPlayer('测试', ORIGINS[0], SECTS[0]);
-  assert(spellP.spells.length === 0, '基础吐纳术无神通');
+  assert(spellP.spells.length === 1, '开局自带本命五行的入门一式（不必赤手空拳上路）');
+  assert(Object.values(STARTER_SPELLS).includes(spellP.spells[0]), '入门一式取自本命五行');
+  assert(spellP.spellLv[spellP.spells[0]] === 1, '新习得的神通为一层');
   learnTechnique(spellP, '青灵诀');
   assert(spellP.spells.includes('回春术'), '修习青灵诀习得回春术');
   learnTechnique(spellP, '青霄剑诀');
@@ -430,7 +493,8 @@ async function main() {
   learnTechnique(eqP, '玄龟甲功');
   switchTechnique(eqP, '玄龟甲功');
   assert(playerDefense(eqP) > defBase, '功法提供防御加成');
-  assert(TREASURES['太虚剑'].atk === 90 && TREASURES['太虚剑'].def === 15, '法宝属性含攻防');
+  assert(TREASURES['太虚剑'].atkPct > 0 && TREASURES['太虚剑'].defPct > 0, '法宝属性为百分比加成');
+  assert(TREASURES['混天珠'].tier > TREASURES['松纹剑'].tier, '法宝按品阶排序，缴获比较有据可依');
 
   console.log('· 突破（多次，检查境界下标不越界）');
   for (let i = 0; i < 10; i++) {
@@ -446,6 +510,217 @@ async function main() {
   console.log('· 战斗（Mock 默认攻击，应有限回合内分出胜负）');
   const cr = await combat(p, state.leads, io);
   assert(['win', 'lose', 'escape'].includes(cr), 'combat 正常结算');
+
+  console.log('· 擂台点到为止（比试输了不该丢灵石）');
+  const arenaP = createPlayer('擂台', ORIGINS[0], SECTS[0]);
+  arenaP.spirit = 5000;
+  // 越级三档必败：这一场是用来验「败」的后果的
+  const before = arenaP.spirit;
+  const ar = await combat(arenaP, [], io, { kind: '天骄', arena: '擂台', boost: 12 });
+  assert(ar === 'lose', `越级十二档应当落败（实得 ${ar}）`);
+  assert(arenaP.spirit === before, '擂台落败不夺灵石');
+
+  console.log('· 连战气血延续（大比三轮不该满血复活）');
+  const carryP = createPlayer('连战', ORIGINS[0], SECTS[0]);
+  const carry = { hp: playerHp(carryP) };
+  await combat(carryP, [], io, { kind: '天骄', arena: '擂台', carry });
+  assert(carry.hp >= 1 && carry.hp <= playerHp(carryP), '战后剩余气血写回 carry');
+  const afterFirst = carry.hp;
+  await combat(carryP, [], io, { kind: '天骄', arena: '擂台', carry, boost: 3 });
+  assert(carry.hp <= afterFirst || afterFirst === playerHp(carryP), '第二场从带伤状态接着打');
+
+  console.log('· 成长曲线（大境界压制 / 境界内可搏）');
+  for (let r = 0; r < REALMS.length - 1; r++) {
+    const jump = powerOf(r + 1, 0) / powerOf(r, 0);
+    assert(Math.abs(jump - REALM_STEP) < 1e-9, `第 ${r} 境到下一境跳变为 ${REALM_STEP} 倍（实测 ${jump.toFixed(3)}）`);
+  }
+  const inner = powerOf(0, 3) / powerOf(0, 0);
+  assert(inner > 1.5 && inner < 1.8, `境界内四阶合计约 1.6 倍（实测 ${inner.toFixed(3)}）`);
+  assert(powerOf(1, 0) > powerOf(0, 3), '下一大境界的初期强于上一境的大圆满');
+  {
+    const lo = createPlayer('低', ORIGINS[0], SECTS[0]);
+    const hi = createPlayer('高', ORIGINS[0], SECTS[0]);
+    hi.realmIdx = 3;
+    assert(playerHp(hi) > playerHp(lo) * 8, '越三个大境界，气血拉开一个数量级');
+    assert(playerSpeed(hi) > playerSpeed(lo) && playerSpeed(hi) < playerSpeed(lo) * 4,
+      '遁速走线性小数（按差值用，不能跟着战力指数膨胀）');
+  }
+
+  console.log('· 五行相生相克表自洽');
+  {
+    const shengVals = ELEMENTS.map((e) => SHENG[e]);
+    const keVals = ELEMENTS.map((e) => KE[e]);
+    assert(new Set(shengVals).size === 5, '相生表是一个五元环，每一系恰好生一系');
+    assert(new Set(keVals).size === 5, '相克表是一个五元环，每一系恰好克一系');
+    assert(ELEMENTS.every((e) => SHENG[e] !== e && KE[e] !== e), '五行不自生也不自克');
+    assert(ELEMENTS.every((e) => SHENG[e] !== KE[e]), '所生与所克不是同一系');
+    assert(ELEMENTS.every((e) => KE[KE[e]] !== e), '相克不成对（甲克乙则乙不克甲）');
+  }
+
+  console.log('· 神通库（规模 / 画面描写 / 升级不涨消耗）');
+  {
+    const names = Object.keys(SPELLS);
+    assert(names.length >= 60, `神通至少 60 式（当前 ${names.length} 式）`);
+    for (const n of names) {
+      const d = SPELLS[n];
+      assert(d.flavor.length >= 10, `${n} 配有施展时的画面描写`);
+      assert(d.desc.length > 0, `${n} 有一行菜单功效`);
+      assert(d.effects.length > 0, `${n} 至少有一条效果`);
+      assert(d.cost >= 0 && d.cost <= 6, `${n} 灵气消耗在 0~6 之间（当前 ${d.cost}）`);
+      assert(d.tier >= 1 && d.tier <= 4, `${n} 品阶合法`);
+    }
+    for (const e of ELEMENTS) {
+      assert(names.some((n) => SPELLS[n].element === e), `${e} 系有神通可用`);
+    }
+    // 铁律：升级只涨威力，不涨消耗——SpellDef 只有一个 cost 字段，结构上就无处可涨
+    assert(SPELL_LV_MULT.length === SPELL_MAX_LV, '神通五级');
+    for (let i = 1; i < SPELL_LV_MULT.length; i++) {
+      assert(SPELL_LV_MULT[i] > SPELL_LV_MULT[i - 1], '威力逐级递增');
+    }
+    const gains = SPELL_LV_MULT.slice(1).map((v, i) => v / SPELL_LV_MULT[i]);
+    assert(gains[gains.length - 1] > gains[0], '成长率递增：最后一级最值钱，逼你专精');
+    assert(SPELL_LV_COST.slice(1).every((c, i, a) => i === 0 || c > a[i - 1]), '升级点数逐级变贵');
+    for (let i = 1; i < FATIGUE.length; i++) {
+      assert(FATIGUE[i] < FATIGUE[i - 1], '后继无力：连发同一式威力递减');
+    }
+  }
+
+  console.log('· 五行灵根值与金丹品质门控');
+  {
+    const pure = rootsFor('天灵根', ELEMENTS);
+    const muddy = rootsFor('五灵根', ELEMENTS);
+    assert(rootPurity(pure) > rootPurity(muddy), '单灵根远比五灵根纯');
+    assert(coreQualityCap(rootPurity(pure)) === 9, '天灵根可结九品金丹');
+    assert(coreQualityCap(rootPurity(muddy)) <= 3, '五灵根封顶三品——开局的灵根，两百年后再兑现一次');
+    assert(ELEMENTS.every((e) => pure[e] > 0), '未占到的五行也留一线底子');
+    assert(coreBonus(9).hpPct > coreBonus(1).hpPct, '金丹品质越高，永久气血加成越多');
+  }
+
+  console.log('· 小境界自动晋升（大圆满处停住）');
+  {
+    const ap = createPlayer('自动', ORIGINS[0], SECTS[0]);
+    ap.cultivation = 350; // 一次长闭关攒下的修为，应当连跨三阶
+    const steps = autoAdvance(ap, io);
+    assert(steps === 3, `修为溢满可连跨小境界（实测跨了 ${steps} 阶）`);
+    assert(ap.stageIdx === REALMS[0].stages.length - 1, '停在大圆满');
+    assert(ap.realmIdx === 0, '自动晋升绝不跨大境界——那一步要玩家自己迈');
+    assert(ap.cultivation === 50, '溢出的修为结转到下一小阶');
+    assert((ap.insight ?? 0) === 3, '每跨一小阶给一点悟道点');
+    ap.cultivation = 200;
+    assert(autoAdvance(ap, io) === 0, '大圆满之后不再自动晋升');
+    assert(ap.cultivation === 100, '大圆满处修为封顶 100');
+  }
+
+  console.log('· 敌人也会打：难度阶梯与越阶压制（各 60 场蒙特卡洛）');
+  {
+    // 敌人和你共用一套战斗语汇（牌组/灵气/五行/后继无力），区别只在选招由 AI 权重表决定。
+    // 于是难度自然分层：妖兽不会自保 → 修士有家底 → 天骄一身法宝，擂台才是势均力敌。
+    let buf: string[] = [];
+    let lowHp = false;
+    const strip2 = (x: string) => x.replace(/\x1b\[[0-9;]*m/g, '');
+    const smart: GameIO = {
+      clear() { buf = []; }, print(t = '') { buf.push(strip2(t)); }, async narrate() {}, async pause() {},
+      async ask(q: string, choices?: string[], def?: string) {
+        if (q.startsWith('选择行动')) {
+          const hb = buf.filter((l) => /[█░]/.test(l)).pop()?.match(/(\d+)\/(\d+)/);
+          lowHp = !!hb && parseInt(hb[1], 10) < parseInt(hb[2], 10) * 0.45;
+          if (lowHp) { const h = q.match(/(\d+)\)疗伤/); if (h) return h[1]; }
+          const sp = q.match(/(\d+)\)施法/);
+          if (sp) return sp[1];
+          return q.match(/(\d+)\)普通攻击/)?.[1] ?? def ?? '1';
+        }
+        if (q.startsWith('施展')) {
+          // 照菜单选招：选项行给标签，紧跟一行是功效——和真人看到的一样
+          const cands: Array<{ n: string; sc: number }> = [];
+          for (let i = 0; i < buf.length; i++) {
+            const m = buf[i].match(/^\s*([1-9]\d*)\)/);
+            if (!m) continue;
+            const label = buf[i];
+            const desc = buf[i + 1] ?? '';
+            const pct = parseInt(desc.match(/(\d+)%/)?.[1] ?? '0', 10);
+            let sc = /伤害/.test(desc) ? pct : 20;
+            if (/ 克/.test(label)) sc *= 2;
+            if (/连击/.test(label)) sc *= 1.4;
+            const f = label.match(/后继无力×([\d.]+)/);
+            if (f) sc *= parseFloat(f[1]);
+            cands.push({ n: m[1], sc });
+          }
+          return cands.length > 0 ? cands.sort((a, b) => b.sc - a.sc)[0].n : '1';
+        }
+        return def ?? choices?.[0] ?? '1';
+      },
+    };
+    // 一个正常发展到化神的修士该有的家底
+    const base = createPlayer('武', ORIGINS[0], SECTS[0]);
+    base.realmIdx = 5;
+    base.stageIdx = 1;
+    const elem = mainElement(base.roots);
+    const pool = Object.keys(SPELLS).filter((n) => SPELLS[n].tier <= 3 && !SPELLS[n].effects.some((e) => e.kind === 'escape'));
+    const deck = [...pool.filter((n) => SPELLS[n].element === elem).slice(0, 4), ...pool.slice(0, 2)].slice(0, 6);
+    base.spells = deck;
+    base.spellLv = Object.fromEntries(deck.map((n) => [n, 3]));
+    base.treasure = '云海扇';
+    learnTechnique(base, '狂雷劲');
+    switchTechnique(base, '狂雷劲');
+    base.techProficiency['狂雷劲'] = 60;
+    base.formation = '七杀阵';
+    base.goldenCore = { type: CORE_TYPES[elem].name, quality: 5 };
+    base.yuanying = '灵潮';
+    base.daoPath = `以${elem}入道`;
+    const N = 60;
+    const rate = async (kind: FoeKind, boost: number): Promise<number> => {
+      let w = 0;
+      for (let i = 0; i < N; i++) {
+        const c = JSON.parse(JSON.stringify(base));
+        c.pills['疗伤丹'] = 3;
+        if (await combat(c, [], smart, { boost, kind, fight: '生死斗' }) === 'win') w += 1;
+      }
+      return w / N;
+    };
+    const beast = await rate('妖兽', 0);
+    const cultivator = await rate('修士', 0);
+    const elite = await rate('天骄', 0);
+    const uphill = await rate('修士', 4);
+    assert(beast >= 0.75, `妖兽是稳妥的练级对象（实测 ${(beast * 100).toFixed(0)}%）`);
+    assert(cultivator >= 0.55 && cultivator <= 0.95, `同境界散修有来有回（应 55%~95%，实测 ${(cultivator * 100).toFixed(0)}%）`);
+    assert(elite >= 0.25 && elite <= 0.7, `同境界天骄势均力敌（应 25%~70%，实测 ${(elite * 100).toFixed(0)}%）`);
+    assert(beast > cultivator && cultivator > elite,
+      `难度阶梯须成立：妖兽 ${(beast * 100).toFixed(0)}% > 散修 ${(cultivator * 100).toFixed(0)}% > 天骄 ${(elite * 100).toFixed(0)}%`);
+    assert(uphill <= 0.2, `越一个大境界基本打不动（实测 ${(uphill * 100).toFixed(0)}%）`);
+  }
+
+  console.log('· 敌人牌组：会几招本身就是难度分层');
+  {
+    const lowP = createPlayer('低', ORIGINS[0], SECTS[0]);
+    const highP = createPlayer('高', ORIGINS[0], SECTS[0]);
+    highP.realmIdx = 6;
+    const weak = makeEnemy(lowP, { kind: '妖兽' });
+    const elite = makeEnemy(highP, { kind: '天骄' });
+    assert(weak.deck.length >= 1, '低阶妖兽也至少会一式');
+    assert(elite.deck.length > weak.deck.length, `境界越高牌组越大（妖兽 ${weak.deck.length} 式 vs 天骄 ${elite.deck.length} 式）`);
+    assert(elite.deck.every((n) => SPELLS[n]), '牌组里全是真实存在的神通');
+    assert(weak.deck.every((n) => SPELLS[n].tier <= 1), '炼气期的妖兽不会仙法');
+    // 妖兽走本能：不会疗伤、不会护罩、不会遁法
+    const beastHeals = weak.deck.some((n) => SPELLS[n].effects.some((e) => ['heal', 'regen', 'shield', 'guard', 'escape'].includes(e.kind)));
+    assert(!beastHeals, '妖兽不会自保法术，只有爪牙与毒');
+    assert(ELEMENTS.every((e) => (elite.roots[e] ?? 0) >= 0) && elite.roots[elite.element] > 0, '敌人也有一副五行灵根，施法一样吃亲和');
+    assert(elite.maxQi > 0 && elite.qi > 0, '敌人也有灵气，绝技一样要花钱');
+  }
+
+  console.log('· 擂台禁丹药法器（比的是修为与神通，不是家底）');
+  {
+    const arenaIO = new MockIO();
+    const ap = createPlayer('台', ORIGINS[0], SECTS[0]);
+    ap.pills['疗伤丹'] = 5;
+    ap.talismans['烈焰符'] = 5;
+    const before = ap.pills['疗伤丹'];
+    await combat(ap, [], arenaIO, { kind: '天骄', fight: '擂台', noItems: true, title: '大比' });
+    const prompts = arenaIO.asks.filter((q) => q.startsWith('选择行动'));
+    assert(prompts.length > 0, '擂台确实打了起来');
+    assert(prompts.every((q) => !q.includes('疗伤') && !q.includes('符箓')), '禁令下丹药与符箓不出现在行动菜单里');
+    assert(ap.pills['疗伤丹'] === before, '一颗丹药也没被吃掉');
+    assert(arenaIO.log.some((l) => plain(l).includes('此战不得用丹药法器')), '面板上写明了台规');
+  }
 
   console.log('· 游历（20 次，随机分支不抛错）');
   for (let i = 0; i < 20; i++) {
@@ -522,8 +797,8 @@ async function main() {
   menuState.leads = [makeLead(menuState.player, 20)];
   await mainMenu(menuState, menuIO);
   const withLeadMenu = menuIO.log.join('\n');
-  assert(noLeadMenu.includes('7) 突破境界'), '无红颜时「突破境界」为 7)');
-  assert(withLeadMenu.includes('7) 突破境界'), '有红颜时「突破境界」仍为 7)');
+  assert(noLeadMenu.includes('7) 冲击大境界瓶颈'), '无红颜时「冲击大境界瓶颈」为 7)');
+  assert(withLeadMenu.includes('7) 冲击大境界瓶颈'), '有红颜时「冲击大境界瓶颈」仍为 7)');
   assert(noLeadMenu.includes('6) 拜访红颜'), '无红颜时「拜访红颜」仍占 6) 并置灰');
   assert(withLeadMenu.includes('6) 拜访红颜'), '有红颜时「拜访红颜」为 6)');
   assert(noLeadMenu.includes('玄启'), '状态栏显示世界纪年');
@@ -625,7 +900,7 @@ async function main() {
   for (let i = 0; i < 500; i++) advanceLeads(capLeads, 3);
   assert(capLead.realmIdx <= 5, '红颜最多领先主角两阶（封顶 +2）');
 
-  console.log('· 渡劫飞升（有渡劫丹与道侣共渡必成功 + 结局收束）');
+  console.log('· 渡劫：心魔劫 + 九重雷劫两场真战斗');
   p.realmIdx = REALMS.length - 1;
   p.stageIdx = REALMS[p.realmIdx].stages.length - 1;
   p.pills['渡劫丹'] = 1;
@@ -633,10 +908,40 @@ async function main() {
   daoLead.dao = true;
   p.daoCompanion = daoLead.name;
   io.log = [];
-  const won = await ascend({ player: p, leads: [daoLead], year: 400 }, io);
-  assert(won === true, '持渡劫丹与道侣共渡，飞升应成功');
+  // 心魔会你会的每一式，还照 AI 权重表出招——用会打的机器人驱动，别拿默认键去送
+  const ascIO = new MockIO();
+  ascIO.decide = (q: string) => {
+    if (q.startsWith('选择行动')) {
+      const sp = q.match(/(\d+)\)施法/);
+      return sp ? sp[1] : (q.match(/(\d+)\)普通攻击/)?.[1] ?? '1');
+    }
+    if (q.startsWith('施展')) {
+      const cands: Array<{ n: string; sc: number }> = [];
+      const lines = ascIO.log.map(plain);
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^\s*([1-9]\d*)\)/);
+        if (!m) continue;
+        const pct = parseInt((lines[i + 1] ?? '').match(/(\d+)%/)?.[1] ?? '0', 10);
+        let sc = /伤害/.test(lines[i + 1] ?? '') ? pct : 20;
+        if (/ 克/.test(lines[i])) sc *= 2;
+        const f = lines[i].match(/后继无力×([\d.]+)/);
+        if (f) sc *= parseFloat(f[1]);
+        cands.push({ n: m[1], sc });
+      }
+      return cands.length > 0 ? cands.sort((a, b) => b.sc - a.sc)[0].n : '1';
+    }
+    return null;
+  };
+  const won = await ascend({ player: p, leads: [daoLead], year: 400 }, ascIO);
+  const ascLog = ascIO.full.map(plain).join('\n');
+  assert(ascLog.includes('心魔劫'), '渡劫先打心魔劫（对手是你自己）');
+  assert(ascLog.includes('九重雷劫'), '心魔之后是九重雷劫');
+  assert(ascLog.includes('第 9/9 回合'), '雷劫必须打满九个回合，撑住才算过');
+  assert(!ascLog.includes('突破成功率'), '渡劫不再是掷一次骰子');
+  // 渡劫丹 + 道侣 + 满身积累，应当撑得过去
+  assert(won === true, '备足了的渡劫者应能撑过九雷');
   assert(p.biography.some((l) => l.includes('飞升')), '飞升写入大事记');
-  assert(io.log.some((l) => l.includes('人生大事记')), '结局输出人生大事记（立传）');
+  assert(ascIO.full.some((l) => l.includes('人生大事记')), '结局输出人生大事记（立传）');
 
   if (failures === 0) {
     console.log('\n✅ 全部通过（最终境界：' + playerTitle(p) + '）');

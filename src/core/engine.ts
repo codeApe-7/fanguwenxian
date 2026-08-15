@@ -3,18 +3,20 @@
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
 import {
-  REALMS, ORIGINS, SECTS, SCENARIOS, ARCHETYPES, ROOTS, ROOT_COSTS,
+  REALMS, ORIGINS, SECTS, SCENARIOS, ARCHETYPES, ROOTS, ROOT_COSTS, ELEMENTS,
   TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SURNAMES,
-  SECT_RANKS, SECT_RANK_NEED, TECHNIQUES,
+  SECT_RANKS, SECT_RANK_NEED, TECHNIQUES, SPELLS, SPELL_MAX_LV, SPELL_LV_COST, talentsFor,
   techLevelName, techPower, techPowerOf, switchTechnique, techniqueSummary,
   toxinPenalty, playerTitle, playerAttack, playerDefense, playerHp,
+  playerSpeed, playerSense, playerMaxQi, spellLevel, spellPower,
+  heartName, abodeOf, rootsFor, mainElement, CORE_QUALITY_NAMES,
 } from '../content.js';
-import type { Talent, OriginDef } from '../content.js';
+import type { Talent, OriginDef, Element } from '../content.js';
 import { START_YEAR } from '../content/world.js';
 import { blue, bold, green, red, yellow, cyan, magenta, dim } from '../colors.js';
-import { pick } from './rng.js';
+import { pick, shuffle } from './rng.js';
 import { createPlayer } from './character.js';
-import { cultivate, breakthrough, ascend, takePill, comprehendFragments } from './cultivate.js';
+import { cultivate, breakthrough, ascend, takePill, comprehendFragments, autoAdvance, studySpells } from './cultivate.js';
 import { explore } from './explore.js';
 import { market } from './market.js';
 import { alchemy, forge, formation, talisman } from './crafts.js';
@@ -53,13 +55,15 @@ export async function intro(io: GameIO): Promise<'1' | '2' | '3'> {
 }
 
 // —— 加点辅助：从一组天赋中选择一项（0 返回 null） ——
-async function pickTalent(io: GameIO, title: string, talents: Talent[]): Promise<Talent | null> {
+// hidden：因出身不符而未列出的条目数，只作提示，不可选。
+async function pickTalent(io: GameIO, title: string, talents: Talent[], hidden = 0): Promise<Talent | null> {
   while (true) {
     io.print(cyan(`—— ${title} ——`));
     talents.forEach((t, i) => {
       const tag = t.cost === 0 ? dim('（免费）') : t.cost < 0 ? yellow(`（花费 ${-t.cost}）`) : green(`（返还 ${t.cost}）`);
       io.print(` ${i + 1}) ${t.name}：${t.desc}${tag}`);
     });
+    if (hidden > 0) io.print(dim(`（另有 ${hidden} 项经历与你的出生不符，未列出——换个出生便能看见）`));
     io.print(' 0) 返回');
     const ch = await io.ask('选择：');
     if (ch === '0' || ch === '') return null;
@@ -111,6 +115,30 @@ async function pickRoot(io: GameIO): Promise<string | null> {
   }
 }
 
+async function pickElement(io: GameIO): Promise<Element | null> {
+  const hint: Record<Element, string> = {
+    金: '锐利、破防、剑意与雷霆——出手最快见血的一系。',
+    木: '生机、缠缚与蛊毒——耗得起，就熬得过。',
+    水: '寒滞、减伤与吞噬——把对手拖进你的节奏里。',
+    火: '爆发与灼烧——伤害最高，也最经不起拖。',
+    土: '厚重、护罩与镇压——站着不动，也是一种赢法。',
+  };
+  while (true) {
+    io.print(cyan('—— 本命五行 ——'));
+    io.print(dim('  灵根最深的一系。它决定你哪一系神通最强，也决定日后能结几品金丹。'));
+    ELEMENTS.forEach((e, i) => io.print(` ${i + 1}) ${e}：${hint[e]}`));
+    io.print(' 0) 返回');
+    const ch = await io.ask('选择：');
+    if (ch === '0' || ch === '') return null;
+    const idx = parseInt(ch, 10);
+    if (isNaN(idx) || idx < 1 || idx > ELEMENTS.length) {
+      io.print(red('无效编号。'));
+      continue;
+    }
+    return ELEMENTS[idx - 1];
+  }
+}
+
 export async function createCharacter(io: GameIO): Promise<GameState> {
   await io.clear();
   await io.narrate('你，一个再平凡不过的山野少年，即将踏上逆天改命的仙途。');
@@ -132,9 +160,15 @@ export async function createCharacter(io: GameIO): Promise<GameState> {
   const archetype = ARCHETYPES[ai];
 
   // —— 天赋点加点（可反复修改，0 完成） ——
+  // 儿时/青年经历按出身标签过滤：孤儿没有家世可败落，也不会有婚约可退。
   let origin = ORIGINS[0];
   let aptitude = TALENT_APTITUDES.find((t) => t.cost === 0)!;
   let root = '三灵根';
+  let mainElem: Element = '火';
+  // 副属性的排布开局摇一次即定，之后只随「本命五行」的选择前移，不再重摇——
+  // 否则每次翻菜单灵根值都在跳，玩家没法比较。
+  const elemOrder = shuffle([...ELEMENTS]);
+  const rootsNow = () => rootsFor(root, [mainElem, ...elemOrder.filter((e) => e !== mainElem)]);
   let body = TALENT_BODIES.find((t) => t.cost === 0)!;
   let childhood = TALENT_CHILDHOODS.find((t) => t.cost === 0)!;
   let youth = TALENT_YOUTHS.find((t) => t.cost === 0)!;
@@ -149,11 +183,13 @@ export async function createCharacter(io: GameIO): Promise<GameState> {
     io.print(` 2) 资质：${aptitude.name}（${aptitude.desc}）`);
     const rm = ROOTS.find((r) => r.name === root)!;
     io.print(` 3) 灵根：${root}（修炼 ×${rm.mult}）`);
-    io.print(` 4) 先天体质：${body.name}（${body.desc}）`);
-    io.print(` 5) 儿时经历：${childhood.name}（${childhood.desc}）`);
-    io.print(` 6) 青年经历：${youth.name}（${youth.desc}）`);
+    const rv = rootsNow();
+    io.print(` 4) 本命五行：${mainElem}${dim(`（${ELEMENTS.map((e) => `${e}${rv[e]}`).join(' ')}）`)}`);
+    io.print(` 5) 先天体质：${body.name}（${body.desc}）`);
+    io.print(` 6) 儿时经历：${childhood.name}（${childhood.desc}）`);
+    io.print(` 7) 青年经历：${youth.name}（${youth.desc}）`);
     io.print(' 0) 完成');
-    const ch = await io.ask('选择要修改的类别：', ['0', '1', '2', '3', '4', '5', '6'], '0');
+    const ch = await io.ask('选择要修改的类别：', ['0', '1', '2', '3', '4', '5', '6', '7'], '0');
     if (ch === '0' || ch === '') {
       if (remaining < 0) {
         io.print(red('天赋点不足，请调整选择（可用返还点的缺陷来补齐）。'));
@@ -162,12 +198,40 @@ export async function createCharacter(io: GameIO): Promise<GameState> {
       }
       break;
     }
-    if (ch === '1') { const o = await pickOrigin(io); if (o) origin = o; }
+    if (ch === '1') {
+      const o = await pickOrigin(io);
+      if (o) {
+        origin = o;
+        // 换了出身，原先的经历可能就说不通了——退回中性缺省并说明一句
+        const dropped: string[] = [];
+        if (!talentsFor(TALENT_CHILDHOODS, origin).includes(childhood)) {
+          dropped.push(childhood.name);
+          childhood = TALENT_CHILDHOODS.find((t) => t.cost === 0)!;
+        }
+        if (!talentsFor(TALENT_YOUTHS, origin).includes(youth)) {
+          dropped.push(youth.name);
+          youth = TALENT_YOUTHS.find((t) => t.cost === 0)!;
+        }
+        if (dropped.length > 0) {
+          io.print(dim(`「${dropped.join('」「')}」与${origin.name}的出身不符，已重置。`));
+          await io.pause();
+        }
+      }
+    }
     else if (ch === '2') { const t = await pickTalent(io, '资质', TALENT_APTITUDES); if (t) aptitude = t; }
     else if (ch === '3') { const r = await pickRoot(io); if (r) root = r; }
-    else if (ch === '4') { const t = await pickTalent(io, '先天体质', TALENT_BODIES); if (t) body = t; }
-    else if (ch === '5') { const t = await pickTalent(io, '儿时经历', TALENT_CHILDHOODS); if (t) childhood = t; }
-    else if (ch === '6') { const t = await pickTalent(io, '青年经历', TALENT_YOUTHS); if (t) youth = t; }
+    else if (ch === '4') { const e = await pickElement(io); if (e) mainElem = e; }
+    else if (ch === '5') { const t = await pickTalent(io, '先天体质', TALENT_BODIES); if (t) body = t; }
+    else if (ch === '6') {
+      const list = talentsFor(TALENT_CHILDHOODS, origin);
+      const t = await pickTalent(io, '儿时经历', list, TALENT_CHILDHOODS.length - list.length);
+      if (t) childhood = t;
+    }
+    else if (ch === '7') {
+      const list = talentsFor(TALENT_YOUTHS, origin);
+      const t = await pickTalent(io, '青年经历', list, TALENT_YOUTHS.length - list.length);
+      if (t) youth = t;
+    }
   }
 
   // —— 宗门（开局无门槛，全部门派皆可拜入） ——
@@ -177,7 +241,7 @@ export async function createCharacter(io: GameIO): Promise<GameState> {
   const sectDef = SECTS[si];
 
   // —— 汇总落成 ——
-  const p = createPlayer(finalName, origin, sectDef);
+  const p = createPlayer(finalName, origin, sectDef, rootsNow());
   p.scenario = scenario.name;
   p.cheatBonus = archetype.cheatBonus;
   p.goldenFinger = archetype.name;
@@ -224,12 +288,29 @@ function showStatus(state: GameState, io: GameIO): void {
     io.print(`  职阶：${SECT_RANKS[rankIdx]}${masterTag}    贡献：${p.sectContribution ?? 0}${prog}`);
   }
   if (p.betrayedSect) io.print(red(`  通缉：被 ${p.betrayedSect} 追杀中（剩 ${p.betrayYears} 年）`));
-  io.print(`  灵根：${yellow(p.root)}       年龄：${p.age} / 寿元 ${p.lifespan}`);
+  {
+    const rv = p.roots ?? rootsFor(p.root, ELEMENTS);
+    const main = mainElement(rv);
+    const spread = ELEMENTS.map((e) => (e === main ? yellow(`${e}${rv[e]}`) : dim(`${e}${rv[e]}`))).join(' ');
+    io.print(`  灵根：${yellow(p.root)}·${main}行 ${spread}`);
+  }
+  io.print(`  年龄：${p.age} / 寿元 ${p.lifespan}`);
   io.print(`  境界：${green(playerTitle(p))}    修为：${p.cultivation.toFixed(0)} / 100`);
   const techProf = p.techProficiency[p.technique] ?? 0;
   const techMult = (TECHNIQUES[p.technique]?.mult ?? 1) * techPower(p);
   io.print(`  功法：${p.technique}·${techLevelName(p)}（熟练 ${techProf}，×${techMult.toFixed(2)}）    法宝：${cyan(p.treasure)}`);
-  io.print(`  灵石：${yellow(String(p.spirit))}    心境：${p.heart}`);
+  {
+    const ab = abodeOf(p.abode ?? '山中茅舍');
+    io.print(`  洞府：${cyan(ab.name)}${dim(`（闭关 ×${(ab.speed / 100).toFixed(2)}）`)}`);
+  }
+  io.print(`  灵石：${yellow(String(p.spirit))}    心境：${p.heart}·${green(heartName(p.heart))}`);
+  {
+    const bits: string[] = [];
+    if (p.goldenCore) bits.push(`金丹：${cyan(`${p.goldenCore.type}·${CORE_QUALITY_NAMES[p.goldenCore.quality]}`)}`);
+    if (p.yuanying) bits.push(`元婴：${cyan(p.yuanying)}`);
+    if (p.daoPath) bits.push(`${cyan(p.daoPath)}`);
+    if (bits.length > 0) io.print(`  ${bits.join('    ')}`);
+  }
   {
     const toxin = p.pillToxin ?? 0;
     if (toxin > 0) {
@@ -248,10 +329,15 @@ function showStatus(state: GameState, io: GameIO): void {
   if (p.formation !== '无') io.print(`  阵法：${cyan(p.formation)}`);
   const talis = Object.entries(p.talismans).filter(([, v]) => v > 0).map(([k, v]) => `${k}×${v}`).join(' ');
   if (talis) io.print(`  符箓：${talis}`);
-  if (p.spells.length > 0) io.print(`  神通：${p.spells.join('、')}`);
+  if (p.spells.length > 0) {
+    const list = p.spells.map((s) => `${s}${dim(`${spellLevel(p, s)}层`)}`).join('、');
+    io.print(`  神通：${list}`);
+    if ((p.insight ?? 0) > 0) io.print(`  悟道点：${yellow(String(p.insight))}${dim('（闭关·参悟神通可用）')}`);
+  }
   if (state.leads.length > 0) io.print(`  红颜：${state.leads.map((l) => l.name).join('、')}`);
   io.print(dim('─'.repeat(W)));
-  io.print(`  攻击 ${playerAttack(p)}   防御 ${playerDefense(p)}   气血 ${playerHp(p)}   胜绩 ${p.fightsWon}`);
+  io.print(`  攻击 ${playerAttack(p)}   防御 ${playerDefense(p)}   气血 ${playerHp(p)}`);
+  io.print(`  遁速 ${playerSpeed(p)}   神识 ${playerSense(p)}   灵气 ${playerMaxQi(p)}   胜绩 ${p.fightsWon}`);
   io.print(dim('─'.repeat(W)));
   const pills = Object.entries(p.pills).filter(([, v]) => v > 0).map(([k, v]) => `${k}×${v}`).join(' ');
   const mats = Object.entries(p.materials).filter(([, v]) => v > 0).map(([k, v]) => `${k}×${v}`).join(' ');
@@ -266,8 +352,15 @@ export async function mainMenu(state: GameState, io: GameIO): Promise<string> {
   io.print(blue('═══ 选择你的行动 ═══'));
 
   // 突破境界：渡劫期大圆满可飞升（始终可用），否则需修为满才高亮。
+  // 冲击大境界瓶颈：只有大圆满 + 修为满才亮。
+  // 小境界（初期→中期→后期→大圆满）修为满即自动晋升，不占玩家一次按键。
   const atPeak = p.realmIdx === REALMS.length - 1 && p.stageIdx === REALMS[p.realmIdx].stages.length - 1;
-  const breakLabel = atPeak || p.cultivation >= 100 ? '突破境界' : `突破境界${dim('（修为未满）')}`;
+  const atFull = p.stageIdx === REALMS[p.realmIdx].stages.length - 1;
+  const breakLabel = atPeak
+    ? '渡劫飞升'
+    : atFull && p.cultivation >= 100
+      ? '冲击大境界瓶颈'
+      : `冲击大境界瓶颈${dim(atFull ? '（修为未满）' : '（未至大圆满）')}`;
 
   // 固定编号菜单：「拜访红颜」恒占第 6 位，未结识红颜时置灰而非隐藏。
   // 若按有无红颜增删条目，「突破境界」会在女主登场那年从 6) 跳到 7)，
@@ -376,6 +469,10 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
     const prof = p.techProficiency[p.technique] ?? 0;
     io.print(blue('═══ 闭关 ═══'));
     io.print(`当前功法：《${p.technique}》 ${techLevelName(p)}（熟练 ${prof}/100）`);
+    {
+      const ab = abodeOf(p.abode ?? '山中茅舍');
+      io.print(`修炼之地：${cyan(ab.name)}（闭关效率 ×${(ab.speed / 100).toFixed(2)}）${dim(ab.desc)}`);
+    }
     if ((p.spiritWarm ?? 0) > 0) io.print(yellow(`灵石温养：剩余 ${p.spiritWarm} 年（闭关 +20%）`));
     io.print(' 1) 闭关 1 年    2) 闭关 3 年');
     io.print(' 3) 闭关 5 年    4) 闭关 10 年');
@@ -383,8 +480,9 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
     io.print(' 6) 参悟残篇');
     io.print(' 7) 切换主修功法');
     io.print(' 8) 灵石温养（50 灵石 → 闭关 +20% ×5 年）');
+    io.print(` 9) 参悟神通${(p.insight ?? 0) > 0 ? yellow(`（悟道点 ${p.insight}）`) : dim('（悟道点 0）')}`);
     io.print(' 0) 返回');
-    const ch = await io.ask('选择：', ['0', '1', '2', '3', '4', '5', '6', '7', '8'], '1');
+    const ch = await io.ask('选择：', ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], '1');
     if (ch === '0' || ch === '') return { years: 0, cultivate: 0 };
     if (ch === '1' || ch === '2' || ch === '3' || ch === '4') {
       const years = [1, 3, 5, 10][parseInt(ch, 10) - 1];
@@ -399,6 +497,10 @@ async function retreatMenu(state: GameState, io: GameIO): Promise<{ years: numbe
       p.techProficiency[p.technique] = Math.min(100, prof + 15);
       io.print(green(`你闭关参悟《${p.technique}》，熟练度 +15（${p.techProficiency[p.technique]}/100，${techLevelName(p)}）。`));
       return { years: 1, cultivate: 0 };
+    }
+    if (ch === '9') {
+      if (await studySpells(state.player, io)) return { years: 1, cultivate: 0 };
+      continue;
     }
     if (ch === '7') {
       await switchMenu(state, io);
@@ -432,10 +534,12 @@ async function doAction(state: GameState, action: string, io: GameIO): Promise<A
       for (let i = 0; i < plan.cultivate; i++) {
         total += cultivate(p);
         actual += 1;
-        if (p.cultivation >= 100) break; // 修为已满，提前出关
+        // 小境界满即自动晋升，溢出的修为结转——一次长闭关可以连跨两三阶，不再被打断
+        autoAdvance(p, io);
+        if (p.cultivation >= 100) break; // 已至大圆满且修为满，出关冲击大境界
       }
       io.print(green(`你闭关 ${actual} 年，共得修为 +${total.toFixed(1)}（当前 ${p.cultivation.toFixed(0)}/100）。`));
-      if (p.cultivation >= 100) io.print(yellow('修为已臻圆满，可尝试突破境界。'));
+      if (p.cultivation >= 100) io.print(yellow('修为已臻圆满，可尝试冲击大境界瓶颈。'));
       return { years: actual };
     }
     case '2':
@@ -459,6 +563,10 @@ async function doAction(state: GameState, action: string, io: GameIO): Promise<A
         await ascend(state, io); // 渡劫期大圆满：触发飞升结局
         return 'end';
       }
+      if (p.stageIdx < REALMS[p.realmIdx].stages.length - 1) {
+        io.print(red('尚未修至大圆满。小境界会自行晋升，安心闭关便是。'));
+        return { years: 0 };
+      }
       if (p.cultivation < 100) {
         io.print(red('修为未满，还无法冲击瓶颈。'));
         return { years: 0 };
@@ -468,6 +576,7 @@ async function doAction(state: GameState, action: string, io: GameIO): Promise<A
     }
     case '9':
       await takePill(p, io);
+      autoAdvance(p, io); // 丹药催出来的修为，一样能自动跨小境界
       return { years: 0 };
     default:
       return { years: 0 };
@@ -487,6 +596,7 @@ function yearEnd(state: GameState, io: GameIO): boolean {
   }
   sectYearEnd(p, io);
   p.pillToxin = Math.max(0, (p.pillToxin ?? 0) - 2); // 丹毒每年自然消解 2 点
+  autoAdvance(p, io); // 兜底：剧情/事件/丹药给的修为也能触发小境界自动晋升
   advanceLeads(state.leads, p.realmIdx); // 红颜修为随时间成长
   if (p.age >= p.lifespan) return true;
   if (p.lifespan - p.age <= 10) {

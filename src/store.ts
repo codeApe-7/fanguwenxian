@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { GameIO } from './io.js';
 import type { GameState } from './types.js';
-import { REALMS } from './content.js';
+import { REALMS, ELEMENTS, rootsFor } from './content.js';
 import { yearOfAge } from './core/text.js';
 import { green, red } from './colors.js';
 
@@ -54,6 +54,16 @@ export function loadGame(io: GameIO): GameState | null {
     p.skills ??= [];
     p.formation ??= '无';
     p.talismans ??= {};
+    // —— 战斗与数值重做（0.7.0）字段迁移 ——
+    p.spellLv ??= {};
+    for (const s of p.spells) p.spellLv[s] ??= 1;
+    p.insight ??= 0;
+    p.abode ??= '山中茅舍';
+    p.goldenCore ??= null;
+    p.yuanying ??= null;
+    p.daoPath ??= null;
+    // 旧档没有五行灵根值：按灵根档位铺一副（金为主），保证战斗乘区有数可用
+    if (!p.roots || typeof p.roots !== 'object') p.roots = rootsFor(p.root, ELEMENTS);
     // —— 剧情引擎（0.6.0）字段迁移 ——
     p.storyDone ??= [];
     p.storyMissed ??= [];

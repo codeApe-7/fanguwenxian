@@ -2,11 +2,12 @@
 
 import type { Player, FemaleLead } from '../types.js';
 import {
-  ROOTS, ORIGINS, SECTS, REALMS, PILLS, MATERIALS, TECHNIQUES,
+  ROOTS, ORIGINS, SECTS, REALMS, PILLS, MATERIALS, TECHNIQUES, ELEMENTS,
   SURNAMES, FEMALE_GIVEN, TITLES, APPEARANCES, PERSONALITIES,
+  rootsFor, learnSpell, mainElement, STARTER_SPELLS,
 } from '../content.js';
-import type { OriginDef, SectDef } from '../content.js';
-import { pick, weightedPick, randint } from './rng.js';
+import type { OriginDef, SectDef, Element } from '../content.js';
+import { pick, weightedPick, randint, shuffle } from './rng.js';
 
 /** 随机测灵根，返回 { name, mult }。 */
 export function rollRoot(): { name: string; mult: number } {
@@ -15,8 +16,18 @@ export function rollRoot(): { name: string; mult: number } {
   return { name, mult };
 }
 
+/** 随机铺一副五行灵根值：先摇属性顺序，再按档位分深浅。 */
+export function rollRoots(rootName: string): Record<Element, number> {
+  return rootsFor(rootName, shuffle([...ELEMENTS]));
+}
+
 /** 创建初始玩家。 */
-export function createPlayer(name: string, origin: OriginDef, sect: SectDef): Player {
+export function createPlayer(
+  name: string,
+  origin: OriginDef,
+  sect: SectDef,
+  roots: Record<Element, number> = rollRoots('三灵根'),
+): Player {
   const pills0 = Object.fromEntries(Object.keys(PILLS).map((k) => [k, 0]));
   const mats0 = Object.fromEntries(Object.keys(MATERIALS).map((k) => [k, 0]));
   if (origin.pill) pills0[origin.pill] = 1;
@@ -43,6 +54,13 @@ export function createPlayer(name: string, origin: OriginDef, sect: SectDef): Pl
     techProficiency: { [origin.technique]: 0 },
     fragments: {},
     spells: [],
+    spellLv: {},
+    insight: 0,
+    roots,
+    abode: '山中茅舍',
+    goldenCore: null,
+    yuanying: null,
+    daoPath: null,
     pillToxin: 0,
     root: '三灵根',
     rootMult: 1.0,
@@ -70,7 +88,9 @@ export function createPlayer(name: string, origin: OriginDef, sect: SectDef): Pl
   };
   // 初始功法附带神通
   const def = TECHNIQUES[origin.technique];
-  if (def?.spells) p.spells = [...def.spells];
+  if (def?.spells) for (const s of def.spells) learnSpell(p, s);
+  // 本命五行的入门一式：谁都不该赤手空拳踏上仙途
+  learnSpell(p, STARTER_SPELLS[mainElement(p.roots)]);
   return p;
 }
 

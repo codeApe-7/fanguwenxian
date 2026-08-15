@@ -7,6 +7,8 @@
 // - cd：冷却年数，防止刷同一任务；realmMin/realmMax：境界窗，
 //   低阶杂役到了高境界自动下架（真人不巡山），高阶要务低境界接不了。
 
+import type { FoeKind } from '../content.js';
+
 export interface SectTaskDef {
   id: string;
   step: string;
@@ -16,6 +18,7 @@ export interface SectTaskDef {
   diff: 1 | 2 | 3;      // 难度星级：1 简单 / 2 普通 / 3 困难
   boost?: number;       // combat 敌人等级加成
   intro?: string;       // combat 开场白（{enemy} 占位）
+  foeKind?: FoeKind;    // combat 对手是什么（缺省妖兽）——缉拿叛徒抓的是人，不是妖
   material?: string;
   matN?: number;
   pill?: string;
@@ -42,6 +45,7 @@ export const SECT_TASKS: SectTaskDef[] = [
     world: '一名真传弟子窃取镇宗功法半卷叛逃，沿途设障断追，据报正藏匿于{place}左近。宗门缉令：功法为上，生死次之。',
     say: '「{daoyou}，家丑不外扬——此事办得越快越静越好。他知道的太多了。」',
     intro: '叛逃真传负隅顽抗，手段狠辣——正是 {enemy}！',
+    foeKind: '修士',
     failSay: '「让他跑了……缉令只能再加价。此獠一日在外，宗门一日难安。」',
   },
   {
@@ -64,6 +68,7 @@ export const SECT_TASKS: SectTaskDef[] = [
     world: '一名外门弃徒盗走丹房一炉丹药夜遁，人赃俱在{place}方向。按门规：赃归原处，人送戒律堂。',
     say: '「{daoyou}，抓活的。戒律堂等着问话——丹方从谁手里漏出去的，比丹重要。」',
     intro: '叛逃弃徒狗急跳墙，负隅顽抗——正是 {enemy}！',
+    foeKind: '修士',
     failSay: '「人跑了？丹倒是小事，就怕丹方已经易主……此事记你一过，下不为例。」',
   },
   {
@@ -71,6 +76,7 @@ export const SECT_TASKS: SectTaskDef[] = [
     world: '宗门每岁以灵药易灵石，商队往返{place}官道。近来道上不靖，已有两批货物遭截，坊市那头催货甚急。',
     say: '「{daoyou}，货比命贵——这话难听，可这一车药材换的是全宗下一季的丹钱。」',
     intro: '官道拐弯处杀出劫道的强敌——正是 {enemy}！',
+    foeKind: '修士',
     failSay: '「货……没了？下一季丹房的账，你让老朽怎么做……罢了，人回来就好。」',
   },
   {

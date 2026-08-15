@@ -23,6 +23,13 @@ export interface Player {
   techProficiency: Record<string, number>; // 各功法熟练度 0-100（入门/小成/大成/圆满）
   fragments: Record<string, number>;       // 功法残篇（集齐可参悟补全）
   spells: string[];                        // 已习得的神通/法术
+  spellLv: Record<string, number>;         // 各神通等级 1-5（升级不涨消耗，只涨威力）
+  insight: number;                         // 悟道点：升神通用，全程给不满，逼你专精
+  roots: Record<'金' | '木' | '水' | '火' | '土', number>; // 五行灵根值 0-100，主属性最深
+  abode: string;                           // 洞府/灵脉名，决定闭关效率
+  goldenCore: { type: string; quality: number } | null; // 结丹期一次性 build：金丹型与品
+  yuanying: string | null;                 // 元婴期一次性 build：灵机异象名
+  daoPath: string | null;                  // 化神期一次性 build：入道流派名
   pillToxin: number;                       // 丹毒 0~100（过高降低修炼效率）
   root: string;
   rootMult: number;

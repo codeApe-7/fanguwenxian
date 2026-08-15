@@ -10,6 +10,7 @@
 // - 文案分层：title 是指路牌（短），text 是叙事，log 是大事记条目（立传用）。
 
 import type { GameState } from '../types.js';
+import type { FoeKind } from '../content.js';
 
 // ---- 数据模型 ----
 
@@ -35,6 +36,8 @@ export interface StoryEffects {
 export interface StoryCombat {
   intro?: string;          // 战斗开场白（{enemy} 占位）
   boost?: number;          // 敌人等级加成
+  kind?: FoeKind;          // 对手是什么（缺省妖兽）
+  foe?: string;            // 指名道姓的对手（{name} 占位可填主角名）
   winText: string[];
   loseText: string[];
   winEffects?: StoryEffects;
@@ -145,6 +148,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['石门轰然滑开，一具蒙尘的傀儡在黑暗中亮起双目。'],
         combat: {
           intro: '尘封的守府傀儡苏醒，铁臂横扫而来——正是 {enemy}！',
+          foe: '守府铁傀',
           winText: [
             '傀儡颓然散架。府中陈设简陋，只一座石榻、一架药圃、满壁刀刻的手记。',
             '手记的主人自称「桓无涯」，字迹到后半越发潦草，似有大恸。',
@@ -364,6 +368,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['你趁夜翻入別院，账房烛火未熄。'],
         combat: {
           intro: '账房暗处早有护卫假寐，你指尖方触到铁匣，刀风已至——正是 {enemy}！',
+          kind: '修士',
           winText: [
             '你放倒护卫，抱起铁匣破窗而出。',
             '密账到手——当年灭门一案，厉氏收了三千斤灵砂的「工钱」。出钱的名字被人用刀尖挖去了。',
@@ -399,6 +404,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['你不屑走水门。当空一剑劈开堡门，报上家门名姓——今日寻仇，光明正大。'],
         combat: {
           intro: '厉氏披甲执兵倾巢而出，为首者魔焰滔天——正是 {enemy}！',
+          kind: '魔修',
           boost: 1,
           winText: [
             '一场血战，你连败厉氏三名供奉，堡中骇然。',
@@ -433,6 +439,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['你命族人熄灯闭户，独自提剑立于祖宅门前。雪落无声，来者有声。'],
         combat: {
           intro: '魔修如潮涌入巷中，为首者狞笑一声，当先扑杀——正是 {enemy}！',
+          kind: '魔修',
           boost: 1,
           winText: [
             '你一夜连斩数十魔修，血染门前三尺雪。天明时，来犯者尽数授首，无一走脱。',
@@ -620,6 +627,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['所谓「小东西」，是老龙潭底一枚蛟卵——潭里那条老蛟，可不是小东西。'],
         combat: {
           intro: '你方潜入潭心，水色骤暗，老蛟携万钧水势碾压而来——正是 {enemy}！',
+          foe: '墨潭老蛟',
           winText: [
             '恶战一场，你捞起蛟卵破水而出，浑身是伤，怀里的卵倒是完好。',
             '金掌柜验货后如约交图，还倒贴了一瓶疗伤丹：「爽快人！以后百宝斋的门，为道友常开。」',
@@ -691,6 +699,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['你把那张旧闻推了回去，顺手在茶碗上按出五个指印。谈判破裂，百宝斋的「护卫」动了手。'],
         combat: {
           intro: '百宝斋豢养的老供奉阴笑出手——正是 {enemy}！',
+          kind: '修士',
           boost: 1,
           winText: [
             '老供奉败走，百宝斋连夜撤出此城。散修圈里传开一句话：浮玉旧墟那位，惹不得。',
@@ -818,6 +827,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['你星夜兼程赶到洞窟，洞中阴风阵阵，果然已有人先到一步。'],
         combat: {
           intro: '洞窟深处一名独眼魔修转过身来，森然一笑——正是 {enemy}！',
+          kind: '魔修',
           winText: [
             '独眼魔修伏诛。石壁上的血经拓文虽已残缺，那股熟悉的气息却扑面而来——与你体内魔胎，同源同种。',
             '你把拓文默记于心。魔胎安静了许多，像认出了故人。',
@@ -855,6 +865,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['查无可查，验无可验——你的事，轮不到别人过问。'],
         combat: {
           intro: '女司正令旗一展，缉魔阵起——正是 {enemy}！',
+          foe: '昭衡司女司正',
           winText: [
             '你击退缉魔小队，扬长而去。',
             '三日后，九州各大坊市贴出海捕文书：魔修一名，姓名不详，切切缉拿。——从今往后，你是官册上的「魔头」了。',
@@ -908,6 +919,7 @@ export const STORY_NODES: StoryNode[] = [
         result: ['你听完了十条罪状，笑了：「编的那几条，今天给你们坐实。」'],
         combat: {
           intro: '七派围杀阵中，主阵长老拂尘一抖，当先出手——正是 {enemy}！',
+          kind: '修士',
           boost: 2,
           winText: [
             '血战竟夜，你破阵而出，七派折损惨重，从此闻你之名绕道三舍。',
