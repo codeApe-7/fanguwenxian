@@ -4,6 +4,10 @@ import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
 import { SECTS, REALMS, TECHNIQUES, PILLS, SECT_RANKS, SECT_RANK_NEED, SECT_RANK_POWER, SECT_RANK_REALM, learnTechnique, upgradeTechnique, techniqueSummary, playerTitle, incomeScale } from '../content.js';
 import type { SectDef } from '../content.js';
+import { SECT_TASKS, honorificOf } from '../content/tasks.js';
+import type { SectTaskDef } from '../content/tasks.js';
+import { PLACES } from '../content/world.js';
+import { fill, addBio, eraYear } from './text.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick, chance, randint } from './rng.js';
 import { combat } from './combat.js';
@@ -11,85 +15,97 @@ import { combat } from './combat.js';
 const BETRAY_FEE = 200;       // 请辞出宗需缴纳的灵石
 const PURSUIT_YEARS = 15;     // 强行叛逃被追杀的年限
 const DONATE_RATE = 10;       // 每 10 灵石换 1 贡献
-const TOURNEY_INTERVAL = 3;   // 宗门大比每 3 年一届
+const TOURNEY_INTERVAL = 3;   // 宗门大比每 3 年一届（按世界纪年）
 const MASTER_NEED = 600;      // 挑战宗主所需贡献
 const MASTER_SALARY = 100;    // 宗主每年俸禄（灵石）
 
-// ---- 宗门任务 ----
-
-interface SectTaskDef {
-  title: string;
-  kind: 'combat' | 'collect' | 'craft' | 'patrol';
-  diff: 1 | 2 | 3;   // 难度星级：1 简单 / 2 普通 / 3 困难
-  boost?: number;    // combat 敌人等级加成（困难任务敌人更强）
-  intro?: string;    // combat 开场白（{enemy} 占位）
-  material?: string;
-  matN?: number;
-  pill?: string;
-  reward: number;    // 基础贡献（再按境界缩放）
-}
+// ---- 宗门任务（任务库见 content/tasks.ts：三层文案 + 冷却 + 境界窗） ----
 
 // 难度标注与配色（简单=绿 / 普通=黄 / 困难=红）
 const DIFF_LABEL: Record<number, string> = { 1: '简单', 2: '普通', 3: '困难' };
 const DIFF_COLOR: Record<number, (s: string) => string> = { 1: green, 2: yellow, 3: red };
 
 // 贡献随境界线性上浮：炼气 ×1.0，筑基 ×1.5，结丹 ×2.0，元婴 ×2.5 … 渡劫 ×5.0
-// 理由：战斗敌人本就随境界变强（风险上升），固定奖励会让高境界任务失去性价比，
-//       这也是“贡献太难加”的根因——职阶门槛按境界递增，奖励却停在 10~40。
+// 理由：战斗敌人本就随境界变强（风险上升），固定奖励会让高境界任务失去性价比。
 function taskReward(base: number, realmIdx: number): number {
   return Math.round(base * (1 + realmIdx * 0.5));
 }
-
-const TASKS: SectTaskDef[] = [
-  // —— 困难（三星）：高风险高回报，敌人等级额外 +1~+2 ——
-  { title: '剿灭作乱妖王，荡平其巢穴。', kind: 'combat', diff: 3, boost: 2, intro: '妖王凶焰滔天，携众小妖扑杀而来——正是 {enemy}！', reward: 80 },
-  { title: '追捕叛逃真传弟子。', kind: 'combat', diff: 3, boost: 1, intro: '叛逃真传负隅顽抗，手段狠辣——正是 {enemy}！', reward: 70 },
-  { title: '深入禁地取回失传灵药。', kind: 'combat', diff: 3, boost: 1, intro: '禁地之中守护灵药的上古凶兽现身——正是 {enemy}！', reward: 75 },
-  // —— 普通（二星）：中等回报，敌人与游历相当 ——
-  { title: '属地闹妖，前往除妖。', kind: 'combat', diff: 2, intro: '宗门属地有妖物作乱——正是 {enemy}！', reward: 45 },
-  { title: '追捕叛逃的弃徒。', kind: 'combat', diff: 2, intro: '叛逃弃徒负隅顽抗——正是 {enemy}！', reward: 45 },
-  { title: '护送灵药去往坊市。', kind: 'combat', diff: 2, intro: '半路杀出劫道的强敌——正是 {enemy}！', reward: 50 },
-  { title: '上交聚灵丹 ×1。', kind: 'craft', diff: 2, pill: '聚灵丹', reward: 40 },
-  // —— 简单（一星）：零/低风险，稳妥但回报较低 ——
-  { title: '采集灵草 ×2 上交药园。', kind: 'collect', diff: 1, material: '灵草', matN: 2, reward: 20 },
-  { title: '采集灵花 ×1 上交丹房。', kind: 'collect', diff: 1, material: '灵花', matN: 1, reward: 25 },
-  { title: '上交凝气丹 ×1。', kind: 'craft', diff: 1, pill: '凝气丹', reward: 30 },
-  { title: '巡视宗门属地一年。', kind: 'patrol', diff: 1, reward: 15 },
-  { title: '看守灵田一年。', kind: 'patrol', diff: 1, reward: 15 },
-];
 
 function rankOf(p: { sectRank: number }): number {
   return Math.min(p.sectRank ?? 0, SECT_RANKS.length - 1);
 }
 
-/** 执行一个宗门任务，返回是否消耗时间。玩家自选任务，任务带难度标注与境界缩放后的贡献。 */
+/** 任务失败的贡献代价（接了不做有成本，「接哪个任务」才是决策）。 */
+function taskPenalty(base: number, realmIdx: number): number {
+  return Math.max(1, Math.floor(taskReward(base, realmIdx) / 4));
+}
+
+/**
+ * 执行一个宗门任务，返回是否消耗时间。
+ * 流程：列表（含冷却/身份过滤）→ 详情（世界告示 + 执事口吻）→ 接取确认 → 执行。
+ * 战斗任务失败扣贡献并进入冷却——失败也是叙事，更是代价。
+ */
 async function takeTask(state: GameState, io: GameIO): Promise<boolean> {
   const p = state.player;
   while (true) {
-    io.print(cyan('—— 宗门任务 ——'));
-    TASKS.forEach((task, i) => {
+    p.taskCd ??= {};
+    io.print(cyan('—— 执事堂 · 任务栏 ——'));
+    // 境界窗过滤：不够格的要务不示人，过了身份的杂役自动下架
+    const eligible = SECT_TASKS.filter(
+      (t) => (t.realmMin === undefined || p.realmIdx >= t.realmMin) &&
+             (t.realmMax === undefined || p.realmIdx <= t.realmMax),
+    );
+    const retired = SECT_TASKS.filter((t) => t.realmMax !== undefined && p.realmIdx > t.realmMax).length;
+    if (eligible.length === 0) {
+      io.print(yellow('任务栏上暂无合乎你身份的差事。'));
+      await io.pause();
+      return false;
+    }
+    eligible.forEach((task, i) => {
       const reward = taskReward(task.reward, p.realmIdx);
-      io.print(` ${i + 1}) ${task.title} ${DIFF_COLOR[task.diff](DIFF_LABEL[task.diff])}（贡献 +${reward}）`);
+      const cdLeft = (p.taskCd[task.id] ?? 0) - state.year;
+      const tag = DIFF_COLOR[task.diff](DIFF_LABEL[task.diff]);
+      if (cdLeft > 0) {
+        io.print(dim(` ${i + 1}) ${task.step}（冷却中，${cdLeft} 年后再接）`));
+      } else {
+        io.print(` ${i + 1}) ${task.step} ${tag}（贡献 +${reward}${task.kind === 'combat' ? `，败则 -${taskPenalty(task.reward, p.realmIdx)}` : ''}）`);
+      }
     });
+    if (retired > 0) io.print(dim(`   （另有 ${retired} 项低阶杂役，已不劳你这般修为出手）`));
     io.print(' 0) 返回');
-    const ch = await io.ask('选择任务：', TASKS.map((_, i) => String(i + 1)), '1');
+    const ch = await io.ask('选择任务：');
     if (ch === '0' || ch === '') return false;
     const idx = parseInt(ch, 10);
-    if (isNaN(idx) || idx < 1 || idx > TASKS.length) {
+    if (isNaN(idx) || idx < 1 || idx > eligible.length) {
       io.print(red('无效编号。'));
       continue;
     }
-    const task = TASKS[idx - 1];
+    const task = eligible[idx - 1];
+    if ((p.taskCd[task.id] ?? 0) > state.year) {
+      io.print(yellow('此任务尚在冷却，执事另派了他人。'));
+      continue;
+    }
     const reward = taskReward(task.reward, p.realmIdx);
+    const ctx = { daoyou: honorificOf(rankOf(p), p.sectMaster), place: pick(PLACES), name: p.name };
+
+    // —— 三层文案：告示（世界层）→ 执事（人物层） ——
+    io.print();
+    await io.narrate(dim('【告示】') + fill(task.world, ctx));
+    await io.narrate(fill(task.say, ctx));
+    const ok = await io.ask('接下此任务？(y/n)', ['y', 'n'], 'y');
+    if (ok !== 'y') continue;
 
     if (task.kind === 'combat') {
-      const r = await combat(p, state.leads, io, task.intro, task.boost ?? 0);
+      const r = await combat(p, state.leads, io, task.intro ? fill(task.intro, ctx) : undefined, task.boost ?? 0);
+      p.taskCd[task.id] = state.year + task.cd;
       if (r === 'win') {
         p.sectContribution += reward;
         await io.narrate(green(`任务完成，贡献 +${reward}。`));
       } else {
-        p.sectContribution += Math.max(1, Math.floor(reward / 5));
-        await io.narrate(yellow('任务失利，只得少许苦劳。'));
+        const penalty = taskPenalty(task.reward, p.realmIdx);
+        p.sectContribution = Math.max(0, p.sectContribution - penalty);
+        if (task.failSay) await io.narrate(fill(task.failSay, ctx));
+        io.print(red(`任务失利，贡献 -${penalty}。`));
       }
       return true;
     }
@@ -97,10 +113,12 @@ async function takeTask(state: GameState, io: GameIO): Promise<boolean> {
       const m = task.material!;
       if ((p.materials[m] ?? 0) < (task.matN ?? 1)) {
         io.print(red(`材料不足（需 ${m}×${task.matN}，当前 ${p.materials[m] ?? 0}）。`));
+        if (task.failSay) await io.narrate(fill(task.failSay, ctx));
         continue;
       }
       p.materials[m] -= task.matN!;
       p.sectContribution += reward;
+      p.taskCd[task.id] = state.year + task.cd;
       io.print(green(`上交 ${m}×${task.matN}，贡献 +${reward}。`));
       return true;
     }
@@ -108,20 +126,25 @@ async function takeTask(state: GameState, io: GameIO): Promise<boolean> {
       const pill = task.pill!;
       if ((p.pills[pill] ?? 0) < 1) {
         io.print(red(`你没有 ${pill}。`));
+        if (task.failSay) await io.narrate(fill(task.failSay, ctx));
         continue;
       }
       p.pills[pill] -= 1;
       p.sectContribution += reward;
+      p.taskCd[task.id] = state.year + task.cd;
       io.print(green(`上交 ${pill}×1，贡献 +${reward}。`));
       return true;
     }
-    // 巡逻
-    await io.narrate('你巡守宗门属地一年，赶走了几只不开眼的小妖。');
+    // 巡逻 / 镇守（不会失败）
+    await io.narrate(task.id === '镇阵'
+      ? '你于阵眼枯坐一载，以法力温养阵基。阵成之日，全阵灵光大盛，长老们纷纷颔首。'
+      : '你巡守宗门属地一年，修界碑、访佃户，赶走了几只不开眼的小妖。');
     p.sectContribution += reward;
+    p.taskCd[task.id] = state.year + task.cd;
     if (chance(0.4)) {
       const n = randint(20, 60) * incomeScale(p.realmIdx);
       p.spirit += n;
-      io.print(green(`巡逻途中顺手采得些灵物，卖得 ${n} 灵石。`));
+      io.print(green(`途中顺手采得些灵物，卖得 ${n} 灵石。`));
     }
     return true;
   }
@@ -175,6 +198,7 @@ async function tryPromote(state: GameState, io: GameIO): Promise<boolean> {
     p.sectContribution -= need;
     p.sectRank = next;
     await io.narrate(green(`你击败守关师兄，晋升为 ${SECT_RANKS[next]}！宗门效果提升至 ×${SECT_RANK_POWER[next]}。`));
+    if (next >= 2) addBio(p, `晋升${p.sect}${SECT_RANKS[next]}`);
   } else {
     await io.narrate(red('你败下阵来，晋升失败，来年再战。'));
   }
@@ -318,12 +342,12 @@ async function treasury(state: GameState, io: GameIO): Promise<void> {
 
 // ---- 宗门大比 / 宗主之位 / 宗门战争 ----
 
-/** 参加宗门大比（每 3 年一届，内门以上可参赛，三轮积分赛）。 */
+/** 参加宗门大比（每 3 年一届，按世界纪年开榜，内门以上可参赛，三轮积分赛）。 */
 async function tourney(state: GameState, io: GameIO): Promise<boolean> {
   const p = state.player;
-  if (p.age % TOURNEY_INTERVAL !== 0) {
-    const next = Math.ceil(p.age / TOURNEY_INTERVAL) * TOURNEY_INTERVAL;
-    io.print(red(`宗门大比每 ${TOURNEY_INTERVAL} 年一届，下届在你 ${next} 岁时举办。`));
+  if (state.year % TOURNEY_INTERVAL !== 0) {
+    const next = state.year + (TOURNEY_INTERVAL - (state.year % TOURNEY_INTERVAL));
+    io.print(red(`宗门大比每 ${TOURNEY_INTERVAL} 年一届，下届开榜在 ${eraYear(next)}。`));
     await io.pause();
     return false;
   }
@@ -344,6 +368,7 @@ async function tourney(state: GameState, io: GameIO): Promise<boolean> {
     p.spirit += 300 * incomeScale(p.realmIdx);
     p.materials['灵石精'] = (p.materials['灵石精'] ?? 0) + 1;
     await io.narrate(green('三战全胜！你力压群雄，夺下本届大比魁首，宗门上下与有荣焉！'));
+    addBio(p, `${eraYear(state.year)}宗门大比夺魁`);
   } else if (wins === 2) {
     p.sectContribution += 60;
     p.spirit += 150 * incomeScale(p.realmIdx);
@@ -386,6 +411,7 @@ async function challengeMaster(state: GameState, io: GameIO): Promise<boolean> {
     p.sectMaster = true;
     const legacy = upgradeTechnique(p);
     await io.narrate(green('你击败现任宗主，继承宗主之位！'));
+    addBio(p, `继任${p.sect}宗主`);
     if (legacy) await io.narrate(green(`宗门传承灌顶，你得传承功法《${legacy}》（可于「闭关·切换主修」中启用）！`));
     await io.narrate(green(`此后每年可领俸禄 ${MASTER_SALARY} 灵石，宗门宝库免单，并可发动宗门战争。`));
   } else {
@@ -434,6 +460,7 @@ async function declareWar(state: GameState, io: GameIO): Promise<boolean> {
     p.sectContribution += 100;
     const t = upgradeTechnique(p);
     await io.narrate(green(`大胜！你攻破 ${target.name}，掠夺灵石 ${loot}、妖兽内丹×2，贡献 +100。`));
+    addBio(p, `率${p.sect}攻破${target.name}`);
     if (t) {
       await io.narrate(green(`并从其藏经阁夺得功法《${t}》（可于「闭关·切换主修」中启用）！`));
     } else {
@@ -513,6 +540,7 @@ async function leaveSect(state: GameState, io: GameIO): Promise<boolean> {
     p.betrayedSect = p.sect;
     p.betrayYears = PURSUIT_YEARS;
     await io.narrate(red(`你强行叛逃！${p.sect} 大为震怒，对你下达追杀令！`));
+    addBio(p, `叛出${p.sect}，遭追杀令通缉`);
   }
   p.sect = '散修';
   p.sectContribution = 0;
@@ -561,6 +589,7 @@ async function joinSect(state: GameState, io: GameIO): Promise<boolean> {
   p.sectRank = 0;
   if (target.skill && !p.skills.includes(target.skill)) p.skills.push(target.skill);
   await io.narrate(green(`你拜入 ${target.name}，从${SECT_RANKS[0]}做起。${target.skill ? `得宗门真传，通晓${target.skill}之术。` : ''}`));
+  addBio(p, `改投${target.name}`);
   return true;
 }
 

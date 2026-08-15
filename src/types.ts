@@ -5,7 +5,15 @@ export interface Player {
   origin: string;
   sect: string;
   scenario: string;       // 命运剧本名
-  storyStep: number;      // 主线事件进度（下一个待触发下标）
+  storyStep: number;      // （旧版遗留）主线线性进度，仅存档迁移用
+  storyDone: string[];    // 已触发的剧情节点 id
+  storyMissed: string[];  // 已永久错过的剧情节点 id
+  flags: Record<string, number>; // 剧情 flag 变量表（前置链/互斥分支/多结局判定）
+  biography: string[];    // 人生大事记（立传用，「玄启107年（21岁）·某事」）
+  taskCd: Record<string, number>;  // 宗门任务冷却：任务 id -> 可再接的世界纪年
+  lettersSent: string[];           // 已投递过的传音 id（IsOnly 语义）
+  pendingLetters: Array<{ id: string; dueYear: number }>; // 已触发待送达的传音（随机延迟）
+  worldSeen: string[];             // 已参与/播报过的一次性世界大事 id
   betrayedSect: string | null; // 叛出的宗门（被追杀中）
   betrayYears: number;         // 剩余追杀年限
   sectContribution: number;    // 当前宗门贡献点
@@ -52,9 +60,11 @@ export interface FemaleLead {
   favor: number;    // 好感度 0~100
   met: boolean;
   dao: boolean;     // 是否已是道侣
+  seen?: Record<string, boolean>; // 已触发的专属场景（好感里程碑等，仅一次）
 }
 
 export interface GameState {
   player: Player;
   leads: FemaleLead[];
+  year: number;     // 世界纪年（玄启 N 年）——世界大事按此运转，与玩家年龄解耦
 }

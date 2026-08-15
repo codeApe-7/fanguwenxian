@@ -1,14 +1,23 @@
 // 女主 / 道侣系统。
+// 对白经「性格 × 场景」矩阵查表（content/dialogue.ts）——同一套互动逻辑，
+// 八种性格各有措辞；好感 40/70 各有一段一次性的里程碑小剧情。
 
 import type { GameIO } from '../io.js';
 import type { Player, FemaleLead } from '../types.js';
 import { PERSONALITY_MODS, REALMS, PILLS, MATERIALS, sectOf } from '../content.js';
+import { dialogueOf } from '../content/dialogue.js';
+import { fill, addBio } from './text.js';
 import { green, red, yellow, magenta, dim } from '../colors.js';
-import { randint, chance } from './rng.js';
+import { pick, randint, chance } from './rng.js';
 
 /** 取女主性格的互动倍率（未知性格按 1.0 处理）。 */
 function modsOf(l: FemaleLead) {
   return PERSONALITY_MODS[l.personality] ?? { name: l.personality, talk: 1, debate: 1, gift: 1 };
+}
+
+/** 对白填充上下文。 */
+function ctxOf(p: Player, l: FemaleLead): Record<string, string> {
+  return { name: p.name, her: l.name };
 }
 
 /** 境界差对好感的修正：红颜高于主角更难打动（每高一阶 ×0.85），低于则略易。 */
@@ -63,6 +72,30 @@ export function leadDescription(l: FemaleLead): string {
 }
 
 /**
+ * 好感里程碑：跨过 40 / 70 时各触发一段一次性小剧情（性格专属）。
+ * 每次互动后调用；一次至多触发一段（先 40 后 70，分两次相处触发更有层次）。
+ */
+async function maybeMilestone(p: Player, lead: FemaleLead, io: GameIO): Promise<void> {
+  lead.seen ??= {};
+  const d = dialogueOf(lead.personality);
+  if (lead.favor >= 40 && !lead.seen['m40']) {
+    lead.seen['m40'] = true;
+    io.print();
+    for (const line of d.m40) await io.narrate(fill(line, ctxOf(p, lead)));
+    p.heart = Math.min(100, p.heart + 3);
+    io.print(dim(`（你与 ${lead.name} 之间，有什么悄悄变了。心境 +3）`));
+    return;
+  }
+  if (lead.favor >= 70 && !lead.seen['m70']) {
+    lead.seen['m70'] = true;
+    io.print();
+    for (const line of d.m70) await io.narrate(fill(line, ctxOf(p, lead)));
+    p.heart = Math.min(100, p.heart + 5);
+    io.print(dim(`（自此，${lead.name} 于你已不是寻常故交。心境 +5）`));
+  }
+}
+
+/**
  * 拜访红颜。返回消耗的年数——每一次交谈/论道/赠礼/双修各耗时 1 年，
  * 只看不动手则不耗时。若整次拜访不计时，玩家可在一年内反复论道把修为刷满。
  */
@@ -93,21 +126,29 @@ export async function romance(p: Player, leads: FemaleLead[], io: GameIO): Promi
 /** 与某位红颜相处，返回消耗的年数。 */
 async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<number> {
   let years = 0;
+  let greeted = false;
   while (true) {
     await io.clear();
     io.print(magenta(`═══ 拜访 ${lead.name} ═══`));
     io.print(leadDescription(lead));
     io.print(dim('─'.repeat(40)));
+    if (!greeted) {
+      greeted = true;
+      await io.narrate(fill(pick(dialogueOf(lead.personality).greet), ctxOf(p, lead)));
+    }
     io.print(' 1) 交谈      2) 论道（需好感≥30）');
     io.print(lead.dao ? ' 3) 赠礼      4) 双修' : ' 3) 赠礼      4) 结为道侣（需好感≥80）');
     io.print(' 0) 返回');
     io.print(dim('（交谈/论道/赠礼/双修各耗时 1 年，赠礼被婉拒亦然）'));
     const ch = await io.ask('选择：');
     if (ch === '0' || ch === '') return years;
+    const d = dialogueOf(lead.personality);
     if (ch === '1') {
       const g = Math.max(1, Math.round(randint(3, 8) * modsOf(lead).talk * realmGapMult(p, lead)));
       lead.favor = Math.min(100, lead.favor + g);
-      io.print(green(`你与 ${lead.name} 相谈甚欢，好感 +${g}。`));
+      await io.narrate(fill(pick(d.talk), ctxOf(p, lead)));
+      io.print(green(`一席长谈，好感 +${g}。`));
+      await maybeMilestone(p, lead, io);
       years += 1;
     } else if (ch === '2') {
       if (lead.favor < 30) {
@@ -120,7 +161,9 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<numbe
       lead.favor = Math.min(100, lead.favor + g);
       p.cultivation = Math.min(100, p.cultivation + cult);
       p.heart = Math.min(100, p.heart + 3);
-      io.print(green(`你与 ${lead.name} 论道一载，好感 +${g}，修为 +${cult}。`));
+      await io.narrate(fill(pick(d.debate), ctxOf(p, lead)));
+      io.print(green(`论道一载，好感 +${g}，修为 +${cult}，心境 +3。`));
+      await maybeMilestone(p, lead, io);
       years += 1;
     } else if (ch === '3') {
       if (await giftLead(p, lead, io)) years += 1;
@@ -169,11 +212,13 @@ async function giftLead(p: Player, lead: FemaleLead, io: GameIO): Promise<boolea
       continue;
     }
     const gift = gifts[idx - 1];
+    const d = dialogueOf(lead.personality);
     // 接受概率：好感越高、礼物越珍贵越易被接受
     const rejectChance = Math.max(0, 0.75 - lead.favor * 0.01 - gift.value * 0.002);
     if (chance(rejectChance)) {
       // 被婉拒也算出手一次（照样耗时一年），否则可原地重试到接受为止，等同白嫖好感
-      io.print(yellow(`${lead.name} 看了你一眼，婉言谢绝了你的礼物。`));
+      await io.narrate(fill(d.giftReject, ctxOf(p, lead)));
+      io.print(yellow('礼物被婉拒了。'));
       return true;
     }
     if (gift.cost.spirit) p.spirit -= gift.cost.spirit;
@@ -181,7 +226,9 @@ async function giftLead(p: Player, lead: FemaleLead, io: GameIO): Promise<boolea
     if (gift.cost.material) p.materials[gift.cost.material] -= 1;
     const gain = Math.max(1, Math.round(giftFavor(gift.value) * modsOf(lead).gift * realmGapMult(p, lead)));
     lead.favor = Math.min(100, lead.favor + gain);
-    io.print(green(`${lead.name} 收下礼物，好感 +${gain}。`));
+    await io.narrate(fill(pick(d.giftAccept), ctxOf(p, lead)));
+    io.print(green(`好感 +${gain}。`));
+    await maybeMilestone(p, lead, io);
     return true;
   }
 }
@@ -197,9 +244,13 @@ async function makeDaoCompanion(p: Player, lead: FemaleLead, io: GameIO): Promis
     io.print(red(`还不到结为道侣的时候（好感需 ≥${need}，当前 ${lead.favor}）。`));
     return false;
   }
+  const d = dialogueOf(lead.personality);
+  await io.narrate(`你取出早已备好的信物，向 ${lead.name} 道明心迹。`);
+  for (const line of d.dao) await io.narrate(fill(line, ctxOf(p, lead)));
   lead.dao = true;
   p.daoCompanion = lead.name;
   p.heart = Math.min(100, p.heart + 10);
+  addBio(p, `与 ${lead.name} 结为道侣`);
   await io.narrate(magenta(`山盟海誓，天地为证。你与 ${lead.name} 结为道侣，从此携手仙途！`));
   await io.narrate('此后拜访她，可与之双修，共参大道（修为收益为论道两倍）。');
   return true;
@@ -214,7 +265,8 @@ async function dualCultivate(p: Player, lead: FemaleLead, io: GameIO): Promise<v
   lead.favor = Math.min(100, lead.favor + favor);
   p.cultivation = Math.min(100, p.cultivation + gain);
   p.heart = Math.min(100, p.heart + 2);
-  await io.narrate(magenta(`你与 ${lead.name} 阴阳和合，共参大道。`));
+  await io.narrate(magenta(`你与 ${lead.name} 灵息相引，坎离既济，共参大道。`));
+  await io.narrate(fill(dialogueOf(lead.personality).dual, ctxOf(p, lead)));
   io.print(green(`双修圆满：修为 +${gain}，好感 +${favor}，心境 +2。`));
   if (p.cultivation >= 100) io.print(yellow('修为已臻圆满，可尝试突破境界。'));
 }

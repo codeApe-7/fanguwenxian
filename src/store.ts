@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { GameIO } from './io.js';
 import type { GameState } from './types.js';
 import { REALMS } from './content.js';
+import { yearOfAge } from './core/text.js';
 import { green, red } from './colors.js';
 
 // 存档写入用户主目录，避免落在包安装目录（npx/全局安装下不稳定且易被覆盖）。
@@ -52,8 +53,20 @@ export function loadGame(io: GameIO): GameState | null {
     p.skills ??= [];
     p.formation ??= '无';
     p.talismans ??= {};
+    // —— 剧情引擎（0.6.0）字段迁移 ——
+    p.storyDone ??= [];
+    p.storyMissed ??= [];
+    p.flags ??= {};
+    p.biography ??= [];
+    p.taskCd ??= {};
+    p.lettersSent ??= [];
+    p.pendingLetters ??= [];
+    p.worldSeen ??= [];
+    // 世界纪年：旧档按年龄推算补齐（错过的旧节点由调度器静默归档，不补播）
+    s.year ??= yearOfAge(p.age);
     // 红颜境界字段迁移（旧档仅有 realm 字符串）
     for (const l of s.leads ?? []) {
+      l.seen ??= {};
       if (typeof l.realmIdx !== 'number') {
         let found = false;
         for (let i = 0; i < REALMS.length; i++) {

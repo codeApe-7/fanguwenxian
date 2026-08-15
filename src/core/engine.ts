@@ -10,6 +10,7 @@ import {
   toxinPenalty, playerTitle, playerAttack, playerDefense, playerHp,
 } from '../content.js';
 import type { Talent, OriginDef } from '../content.js';
+import { START_YEAR } from '../content/world.js';
 import { blue, bold, green, red, yellow, cyan, magenta, dim } from '../colors.js';
 import { pick } from './rng.js';
 import { createPlayer } from './character.js';
@@ -20,6 +21,8 @@ import { alchemy, forge, formation, talisman } from './crafts.js';
 import { romance, advanceLeads } from './romance.js';
 import { sectMenu, sectYearEnd } from './sect.js';
 import { maybeTriggerStory } from './storyline.js';
+import { worldTick, nextWorldEvent } from './chronicle.js';
+import { eraYear, addBio, printBiography } from './text.js';
 import { saveGame, hasSave } from '../store.js';
 
 const W = 46;
@@ -30,9 +33,9 @@ function rule(ch: string, color = blue): string {
 
 export async function intro(io: GameIO): Promise<'1' | '2' | '3'> {
   await io.clear();
-  await io.narrate('凡人有疾，仙路无门。');
-  await io.narrate('修仙一途，九死一生。');
-  await io.narrate('你，一个再平凡不过的山野少年，能否逆天改命，飞升仙界？');
+  await io.narrate('天下修士如过江之鲫，飞升者，三千年不过一掌之数。');
+  await io.narrate('寿数在烧，机缘不等——修仙一途，每一步都是取舍。');
+  await io.narrate('你，一个再平凡不过的凡人，如今站在这条路的起点。');
   io.print();
   io.print(bold('《凡骨问仙》· 终端文字冒险'));
   io.print(dim('─'.repeat(W)));
@@ -194,9 +197,11 @@ export async function createCharacter(io: GameIO): Promise<GameState> {
   await io.narrate(`你拜入 ${green(p.sect)}，领取入门灵石，正式踏上仙途。`);
   p.spirit += 50;
   p.cultivation = Math.min(100, p.cultivation + 5);
+  await io.narrate(dim(`时值${eraYear(START_YEAR)}。九州灵机渐盛，仙路名录上，从此多了一个名字。`));
+  addBio(p, `${p.origin}出身，拜入${p.sect}，踏上仙途`);
   await io.pause();
 
-  return { player: p, leads: [] };
+  return { player: p, leads: [], year: START_YEAR };
 }
 
 function showStatus(state: GameState, io: GameIO): void {
@@ -205,6 +210,11 @@ function showStatus(state: GameState, io: GameIO): void {
   io.print(rule('═'));
   io.print(bold(`  《凡骨问仙》 — ${p.name}`));
   io.print(rule('═'));
+  {
+    const next = nextWorldEvent(state.year, p);
+    const hint = next ? dim(`（下一大事：${eraYear(next.year)}·${next.name}）`) : '';
+    io.print(`  纪年：${cyan(eraYear(state.year))} ${hint}`);
+  }
   io.print(`  出身：${p.origin}      宗门：${p.sect}`);
   if (p.sect !== '散修') {
     const rankIdx = Math.min(p.sectRank ?? 0, SECT_RANKS.length - 1);
@@ -270,7 +280,7 @@ export async function mainMenu(state: GameState, io: GameIO): Promise<string> {
     ['5', '宗门'],
     ['6', state.leads.length > 0 ? '拜访红颜' : `拜访红颜${dim('（尚无红颜）')}`],
     ['7', breakLabel],
-    ['8', '存档'],
+    ['8', '存档/大事记'],
     ['9', '服用丹药'],
     ['10', '退出游戏'],
   ];
@@ -446,7 +456,7 @@ async function doAction(state: GameState, action: string, io: GameIO): Promise<A
     case '7': {
       const lastRealm = REALMS.length - 1;
       if (p.realmIdx === lastRealm && p.stageIdx === REALMS[lastRealm].stages.length - 1) {
-        await ascend(p, state.leads, io); // 渡劫期大圆满：触发飞升结局
+        await ascend(state, io); // 渡劫期大圆满：触发飞升结局
         return 'end';
       }
       if (p.cultivation < 100) {
@@ -467,6 +477,7 @@ async function doAction(state: GameState, action: string, io: GameIO): Promise<A
 function yearEnd(state: GameState, io: GameIO): boolean {
   const p = state.player;
   p.age += 1;
+  state.year += 1; // 世界纪年与你一同流逝——但世界的日程不等你
   if ((p.betrayYears ?? 0) > 0) {
     p.betrayYears -= 1;
     if (p.betrayYears === 0) {
@@ -484,11 +495,15 @@ function yearEnd(state: GameState, io: GameIO): boolean {
   return false;
 }
 
-function gameOver(p: Player, reason: string, io: GameIO): void {
+function gameOver(state: GameState, reason: string, io: GameIO): void {
+  const p = state.player;
   io.print(red('═'.repeat(W)));
   io.print(red(`   游戏结束：${p.name}，享年 ${p.age} 岁，${reason}`));
   io.print(red('═'.repeat(W)));
   io.print(yellow(`   最终境界：${playerTitle(p)}`));
+  io.print();
+  printBiography(state, io);
+  io.print(dim('  凡人一世，仙路一程。青史数行，皆是你亲手写下。'));
 }
 
 export async function runGame(state: GameState, io: GameIO): Promise<void> {
@@ -496,7 +511,14 @@ export async function runGame(state: GameState, io: GameIO): Promise<void> {
     const action = await mainMenu(state, io);
 
     if (action === '8') {
-      saveGame(state, io);
+      io.print(' 1) 存档    2) 人生大事记    0) 返回');
+      const ch = await io.ask('选择：', ['0', '1', '2'], '1');
+      if (ch === '1') {
+        saveGame(state, io);
+      } else if (ch === '2') {
+        printBiography(state, io);
+        await io.pause();
+      }
       continue;
     }
     if (action === '10') {
@@ -515,12 +537,13 @@ export async function runGame(state: GameState, io: GameIO): Promise<void> {
     }
     for (let i = 0; i < result.years; i++) {
       if (yearEnd(state, io)) {
-        gameOver(state.player, '寿元耗尽，坐化而去', io);
+        gameOver(state, '寿元耗尽，坐化而去', io);
         saveGame(state, io);
         return;
       }
+      await worldTick(state, io);      // 世界大事与传音——世界的日程自己走
+      await maybeTriggerStory(state, io); // 主线调度：窗口内触发，窗口过即错过
     }
-    await maybeTriggerStory(state, io);
     await io.pause();
   }
 }

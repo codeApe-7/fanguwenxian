@@ -2,12 +2,15 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState } from '../types.js';
-import { chance, weightedChoice, randint } from './rng.js';
+import { chance, weightedChoice, randint, pick } from './rng.js';
 import { makeLead } from './character.js';
 import { leadDescription } from './romance.js';
 import { EVENTS } from './events.js';
 import type { ExploreEvent } from './events.js';
 import { sectOf, sectPower } from '../content.js';
+import { PLACES } from '../content/world.js';
+import { dialogueOf } from '../content/dialogue.js';
+import { fill } from './text.js';
 import { combat } from './combat.js';
 import { red } from '../colors.js';
 
@@ -31,9 +34,9 @@ export async function explore(state: GameState, io: GameIO): Promise<void> {
     const lead = makeLead(p, randint(12, 22)); // 「颇有兴致」——已有初步好感
     state.leads.push(lead);
     await io.clear();
-    await io.narrate('你于山水之间游历，忽见一位佳人……');
+    await io.narrate(fill('你于{place}游历，山转水回处，迎面遇上一位佳人——', { place: pick(PLACES) }));
     io.print(leadDescription(lead));
-    await io.narrate(`${lead.name} 与你偶遇，似乎对你颇有兴致。`);
+    await io.narrate(fill(dialogueOf(lead.personality).meet, { name: p.name, her: lead.name }));
     return;
   }
 
