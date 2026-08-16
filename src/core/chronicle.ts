@@ -7,7 +7,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { REALMS, TREASURES, PILLS, incomeScale, playerTitle, betterTreasures, treasureSummary } from '../content.js';
+import { REALMS, TREASURES, PILLS, incomeScale, spiritGain, playerTitle, betterTreasures, treasureSummary } from '../content.js';
 import { LETTERS } from '../content/letters.js';
 import { applyStoryEffects } from './storyline.js';
 import { dialogueOf } from '../content/dialogue.js';
@@ -63,7 +63,7 @@ export const WORLD_EVENTS: WorldEventDef[] = [
         title: '青崖英杰会 · 擂台',
       });
       if (r === 'win') {
-        const reward = 120 * incomeScale(p.realmIdx);
+        const reward = spiritGain(120, p.realmIdx);
         p.spirit += reward;
         p.heart = Math.min(100, p.heart + 4);
         p.flags['英杰'] = (p.flags['英杰'] ?? 0) + 1;
@@ -158,7 +158,7 @@ export const WORLD_EVENTS: WorldEventDef[] = [
           boost: 1, kind: '魔修', title: '玄阴魔乱 · 御魔前线',
         });
         if (r === 'win') {
-          const reward = 200 * incomeScale(p.realmIdx);
+          const reward = spiritGain(200, p.realmIdx);
           p.spirit += reward;
           p.flags['卫道'] = (p.flags['卫道'] ?? 0) + 1;
           p.heart = Math.min(100, p.heart + 5);
@@ -174,7 +174,7 @@ export const WORLD_EVENTS: WorldEventDef[] = [
           boost: 1, kind: '魔修', title: '玄阴魔乱 · 空城取利',
         });
         if (r === 'win') {
-          const loot = 400 * incomeScale(p.realmIdx);
+          const loot = spiritGain(400, p.realmIdx);
           p.spirit += loot;
           p.flags['乱世枭行'] = (p.flags['乱世枭行'] ?? 0) + 1;
           p.heart = Math.max(0, p.heart - 3);

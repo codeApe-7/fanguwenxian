@@ -345,6 +345,18 @@ export function incomeScale(realmIdx: number): number {
   return INCOME_SCALE[Math.min(realmIdx, INCOME_SCALE.length - 1)] ?? 1;
 }
 
+/**
+ * 按境界缩放后的灵石收益——**永远取整**。
+ *
+ * 灵石是可数的东西，不该出现半块。INCOME_SCALE 里有 2.2 这样的小数，
+ * 直接 `randint(20,60) * incomeScale()` 会得到 103.4，几十笔攒下来就是
+ * 面板上那句「灵石：345.4000000000001」（IEEE 754 的老毛病）。
+ * 一切灵石进项都从这里过一道，别在调用点各写各的 Math.round。
+ */
+export function spiritGain(base: number, realmIdx: number): number {
+  return Math.round(base * incomeScale(realmIdx));
+}
+
 // ---- 洞府 / 灵脉 ----
 // 修炼快慢主要不看你是谁，看你在哪修——「找洞府、抢灵脉」因此才是玩法目标，不是装饰。
 export interface AbodeDef {

@@ -12,7 +12,7 @@ import { dialogueOf } from './dialogue.js';
 import { fill, addBio } from '../core/text.js';
 import { combat } from '../core/combat.js';
 import { green, red, yellow, dim } from '../colors.js';
-import { incomeScale } from '../content.js';
+import { incomeScale, spiritGain } from '../content.js';
 
 export interface LetterDef {
   id: string;
@@ -174,14 +174,14 @@ export const LETTERS: LetterDef[] = [
           boost: 1, foe: '无名剑客', arena: '切磋', title: '洗剑池之约',
         });
         if (r === 'win') {
-          const loot = 150 * incomeScale(p.realmIdx);
+          const loot = spiritGain(150, p.realmIdx);
           p.spirit += loot;
           p.heart = Math.min(100, p.heart + 5);
           await io.narrate(green(`剑客败退，留下佩剑抵作彩头。你变卖得 ${loot} 灵石，江湖名号又响三分。`));
           addBio(p, '洗剑池应战无名剑客，胜之');
         } else {
           // 「败者留物」是约定，不是战败惩罚——故在此处兑现，不走战斗的夺石逻辑
-          const forfeit = Math.min(p.spirit, 150 * incomeScale(p.realmIdx));
+          const forfeit = Math.min(p.spirit, spiritGain(150, p.realmIdx));
           p.spirit -= forfeit;
           await io.narrate(yellow(`技不如人。你依约留下 ${forfeit} 灵石，拱手认负。剑客抱拳还礼：「承让。江湖再会。」`));
         }

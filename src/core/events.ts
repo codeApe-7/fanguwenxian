@@ -8,7 +8,7 @@
 
 import type { GameIO } from '../io.js';
 import type { GameState, Player } from '../types.js';
-import { MATERIALS, TREASURES, TECHNIQUES, REALMS, ROOTS, sectOf, sectPower, upgradeTechnique, playerTitle, incomeScale, betterTreasures, treasureSummary } from '../content.js';
+import { MATERIALS, TREASURES, TECHNIQUES, REALMS, ROOTS, sectOf, sectPower, upgradeTechnique, playerTitle, incomeScale, spiritGain, betterTreasures, treasureSummary } from '../content.js';
 import { PLACES, TOWNS } from '../content/world.js';
 import { dialogueOf } from '../content/dialogue.js';
 import { green, red, yellow, cyan, magenta, dim } from '../colors.js';
@@ -29,7 +29,7 @@ export interface ExploreEvent {
 // ---- 数值辅助（纯函数） ----
 
 function addSpirit(p: Player, n: number): void {
-  p.spirit += Math.round(n * incomeScale(p.realmIdx)); // 灵石收益随境界等比放大
+  p.spirit += spiritGain(n, p.realmIdx); // 灵石收益随境界等比放大
 }
 
 function loseSpirit(p: Player, n: number): void {

@@ -54,6 +54,9 @@ export function loadGame(io: GameIO): GameState | null {
     p.skills ??= [];
     p.formation ??= '无';
     p.talismans ??= {};
+    // 灵石取整（0.7.1）：老档里 incomeScale 的小数已经攒成了
+    // 「灵石：345.4000000000001」，读档时抹平一次
+    p.spirit = Math.round(p.spirit ?? 0);
     // —— 战斗与数值重做（0.7.0）字段迁移 ——
     p.spellLv ??= {};
     for (const s of p.spells) p.spellLv[s] ??= 1;

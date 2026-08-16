@@ -20,7 +20,7 @@ import {
   ENEMY_POOLS, TREASURES, MATERIALS, TALISMANS, TECHNIQUES, SPELLS, REALMS, PILLS,
   SURNAMES, MALE_GIVEN, DAO_STEMS, DAO_STYLES, ELEMENTS, SHENG, KE, BASE_STATS,
   FATIGUE, YUANYING_VISIONS, SPELL_MAX_LV,
-  powerOf, sectOf, playerAttack, playerDefense, playerHp, playerTitle, incomeScale,
+  powerOf, sectOf, playerAttack, playerDefense, playerHp, playerTitle, incomeScale, spiritGain,
   playerSpeed, playerSense, playerMaxQi, playerQiRegen, spellLevel, spellPower, spellSustain, learnSpell,
   rootsFor, mainElement,
 } from '../content.js';
@@ -176,7 +176,7 @@ export function makeEnemy(p: Player, opts: EnemyOpts = {}): Enemy {
     maxQi: 8 + Math.floor(level / 3),
     deck,
     spellLv: Object.fromEntries(deck.map((n) => [n, lv])),
-    loot: randint(20, 60) * incomeScale(p.realmIdx),
+    loot: spiritGain(randint(20, 60), p.realmIdx),
     kind,
   };
 }

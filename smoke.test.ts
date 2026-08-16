@@ -9,7 +9,7 @@
 import type { GameIO } from './src/io.js';
 import type { GameState, FemaleLead, Player } from './src/types.js';
 import type { FoeKind } from './src/content.js';
-import { ORIGINS, SECTS, REALMS, SCENARIOS, ARCHETYPES, ROOT_COSTS, TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SKILLS, PERSONALITY_MODS, PERSONALITIES, TECHNIQUES, TREASURES, ENEMY_POOLS, ELEMENTS, SHENG, KE, SPELLS, SPELL_LV_MULT, SPELL_LV_COST, SPELL_MAX_LV, FATIGUE, REALM_STEP, STARTER_SPELLS, CORE_TYPES, mainElement, talentsFor, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, playerHp, playerSpeed, powerOf, rootsFor, rootPurity, coreQualityCap, coreBonus, techniqueSummary, upgradeTechnique } from './src/content.js';
+import { ORIGINS, SECTS, REALMS, SCENARIOS, ARCHETYPES, ROOT_COSTS, TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SKILLS, PERSONALITY_MODS, PERSONALITIES, TECHNIQUES, TREASURES, ENEMY_POOLS, ELEMENTS, SHENG, KE, SPELLS, SPELL_LV_MULT, SPELL_LV_COST, SPELL_MAX_LV, FATIGUE, REALM_STEP, STARTER_SPELLS, CORE_TYPES, spiritGain, mainElement, talentsFor, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, playerHp, playerSpeed, powerOf, rootsFor, rootPurity, coreQualityCap, coreBonus, techniqueSummary, upgradeTechnique } from './src/content.js';
 import { STORY_NODES, SCENARIO_HEROINES } from './src/content/story.js';
 import { DIALOGUE } from './src/content/dialogue.js';
 import { LETTERS } from './src/content/letters.js';
@@ -61,7 +61,8 @@ function advanceLeadsUntilRealmUp(lead: FemaleLead, p: Player): void {
 }
 
 let failures = 0;
-function assert(cond: boolean, msg: string) {  if (!cond) {
+function assert(cond: boolean, msg: string) {
+  if (!cond) {
     failures++;
     console.error('  ✗ FAIL:', msg);
   }
@@ -435,6 +436,30 @@ async function main() {
   const g = cultivate(p);
   assert(g > 0, 'cultivate 修为增长为正');
   assert(p.cultivation >= 0 && p.cultivation <= 100, 'cultivation 在 [0,100]');
+
+  console.log('· 灵石恒为整数（面板不该出现 345.4000000000001）');
+  {
+    // INCOME_SCALE 里有 2.2 这样的小数，一切灵石进项都要过 spiritGain 取整，
+    // 否则 randint(20,60)*2.2 = 103.4，几十笔攒下来就浮出 IEEE 754 的尾巴。
+    for (let r = 0; r < REALMS.length; r++) {
+      for (let base = 1; base <= 60; base++) {
+        const g = spiritGain(base, r);
+        assert(Number.isInteger(g), `spiritGain(${base}, ${r}) 须为整数（得 ${g}）`);
+      }
+    }
+    // 走一遍真实进项：战利品累加若干次，余额必须仍是整数
+    const coinP = createPlayer('账房', ORIGINS[0], SECTS[0]);
+    coinP.realmIdx = 1; // 筑基期：incomeScale = 2.2，最容易漏小数
+    coinP.spirit = 0;
+    const coinIO = new MockIO();
+    coinIO.decide = (q: string) => (q.startsWith('选择行动') ? (q.match(/(\d+)\)普通攻击/)?.[1] ?? '1') : null);
+    for (let i = 0; i < 40; i++) await combat(coinP, [], coinIO, { kind: '妖兽', boost: -4 });
+    assert(Number.isInteger(coinP.spirit), `连打 40 场后灵石仍须为整数（得 ${coinP.spirit}）`);
+    // 老档迁移：读档时把历史遗留的小数抹平
+    const dirty = { ...createPlayer('旧档', ORIGINS[0], SECTS[0]), spirit: 345.4000000000001 };
+    dirty.spirit = Math.round(dirty.spirit ?? 0); // 与 store.ts 迁移同式
+    assert(dirty.spirit === 345, `旧档灵石应抹平为整数（得 ${dirty.spirit}）`);
+  }
 
   console.log('· 灵石温养（灵石换修炼加速）');
   const warmP = createPlayer('测试', ORIGINS[0], SECTS[0]);
