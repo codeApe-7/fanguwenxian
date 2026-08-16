@@ -21,7 +21,7 @@ import {
   SURNAMES, MALE_GIVEN, DAO_STEMS, DAO_STYLES, ELEMENTS, SHENG, KE, BASE_STATS,
   FATIGUE, YUANYING_VISIONS, SPELL_MAX_LV,
   powerOf, sectOf, playerAttack, playerDefense, playerHp, playerTitle, incomeScale,
-  playerSpeed, playerSense, playerMaxQi, playerQiRegen, spellLevel, spellPower, learnSpell,
+  playerSpeed, playerSense, playerMaxQi, playerQiRegen, spellLevel, spellPower, spellSustain, learnSpell,
   rootsFor, mainElement,
 } from '../content.js';
 import { green, red, yellow, cyan, dim, bold, magenta } from '../colors.js';
@@ -78,10 +78,10 @@ const KIND_MODS: Record<FoeKind, { hp: number; atk: number; def: number; spd: nu
  */
 const KIND_GEAR: Record<FoeKind, number> = {
   妖兽: 1.0,   // 妖兽不穿装备，它的本钱是皮糙肉厚（见 KIND_MODS）
-  修士: 1.55,
-  魔修: 1.60,
-  天骄: 2.00,  // 各宗天骄一身好法宝：擂台才是真正势均力敌的场合
-  同门: 1.45,
+  修士: 1.75,
+  魔修: 1.82,
+  天骄: 2.25,  // 各宗天骄一身好法宝：擂台才是真正势均力敌的场合
+  同门: 1.60,
 };
 
 function gearOf(kind: FoeKind, realmIdx: number): number {
@@ -635,7 +635,9 @@ export async function combat(
   };
 
   /** 单条效果的结算，src 施术、dst 受术。返回本条造成的伤害（供吸血用）。 */
-  function applyEffect(src: Side, dst: Side, e: SpellEffect, mult: number, tag: string): number {
+  // sustain：疗伤/护罩/生机按自身气血百分比结算，不吃伤害那条 ×3.2 曲线，
+  // 也不吃五行相克——「火克金」是打对方用的，跟你给自己疗伤没有关系。
+  function applyEffect(src: Side, dst: Side, e: SpellEffect, mult: number, tag: string, sustain: number): number {
     const who = src.isPlayer ? '你' : src.name;
     const atk = atkOf(src);
     switch (e.kind) {
@@ -651,18 +653,18 @@ export async function combat(
         return 0;
       }
       case 'heal': {
-        const h = Math.round(src.maxHp * (e.value / 100) * mult);
+        const h = Math.round(src.maxHp * (e.value / 100) * sustain);
         src.hp = Math.min(src.maxHp, src.hp + h);
         say(`${who}施展 ${tag}，恢复 ${green(String(h))} 点气血`);
         return 0;
       }
       case 'regen':
-        addBuff(src, 'regen', Math.round(src.maxHp * (e.value / 100)), e.turns ?? 3);
+        addBuff(src, 'regen', Math.round(src.maxHp * (e.value / 100) * sustain), e.turns ?? 3);
         say(`${who}施展 ${tag}，生机绵绵不绝`);
         return 0;
       case 'shield': {
         const boostShield = src.daoPath === '以土入道' ? 1.5 : 1;
-        const sh = Math.round(src.maxHp * (e.value / 100) * mult * boostShield);
+        const sh = Math.round(src.maxHp * (e.value / 100) * sustain * boostShield);
         src.shield += sh;
         say(`${who}施展 ${tag}，结起 ${cyan(String(sh))} 点护罩`);
         return 0;
@@ -739,7 +741,8 @@ export async function combat(
     say(dim(src.isPlayer ? def.flavor : pick(FOE_CAST_LINES[def.element])));
 
     let dealt = 0;
-    for (const e of def.effects) dealt += applyEffect(src, dst, e, mult, tag);
+    const sustain = spellSustain(lv) * fatigue;
+    for (const e of def.effects) dealt += applyEffect(src, dst, e, mult, tag, sustain);
     const drain = def.effects.find((e) => e.kind === 'drain');
     if (drain && dealt > 0) {
       const h = Math.round(dealt * drain.value / 100);

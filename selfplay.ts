@@ -4,7 +4,7 @@
 // 修为满突破、备突破丹、按冷却接任务、攒贡献晋升、逢届大比、定期游历与拜访红颜、
 // 剧情抉择按「侠义/魔道」两套倾向选择。通关后输出 =====STATS===== 结构化覆盖率统计。
 //
-// 运行：npx tsx selfplay.ts [剧本1-4] [righteous|dark] [normal|strong] [宗门名]
+// 运行：npx tsx selfplay.ts [剧本1-4] [righteous|dark] [normal|strong] [宗门名] [种子]
 // 存档自动重定向到 FANGU_SAVE_DIR（缺省 /tmp/fangu-selfplay），不会覆盖真实存档。
 
 process.env.FANGU_SAVE_DIR ??= '/tmp/fangu-selfplay';
@@ -16,6 +16,7 @@ import { SECT_TASKS } from './src/content/tasks.js';
 import { STORY_NODES } from './src/content/story.js';
 import { START_YEAR } from './src/content/world.js';
 import { intro, createCharacter, runGame } from './src/core/engine.js';
+import { seedRng, random } from './src/core/rng.js';
 
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
@@ -231,7 +232,7 @@ class SmartIO implements GameIO {
         const score = POLICY_KEYS[this.policy].reduce((s, k) => s + (o.label.includes(k) ? 1 : 0), 0);
         if (score > bestScore) { bestScore = score; bestN = String(o.n); }
       }
-      return bestN ?? pool[Math.floor(Math.random() * pool.length)];
+      return bestN ?? pool[Math.floor(random() * pool.length)];
     }
 
     // —— y/n：一律积极参与 ——
@@ -512,6 +513,8 @@ async function main(): Promise<void> {
   const policy = (process.argv[3] === 'dark' ? 'dark' : 'righteous') as Policy;
   const build = (process.argv[4] === 'normal' ? 'normal' : 'strong') as Build;
   const sectName = process.argv[5] ?? '玄清门';
+  const seedArg = process.argv[6]; // 可指定种子：同参数同种子复现同一局
+  if (seedArg !== undefined) seedRng(Number(seedArg));
 
   const io = new SmartIO(scenarioNum, policy, build, sectName);
   console.log(`===== 剧本${scenarioNum} · ${policy} · ${build} · 目标宗门:${sectName} =====`);

@@ -65,9 +65,25 @@ export const SPELL_LV_COST = [0, 2, 4, 7, 12];
 /** 后继无力：连续施展同一式的威力倍率，换招即复原。 */
 export const FATIGUE = [1, 0.6, 0.36, 0.2, 0.1];
 
+/**
+ * 疗伤 / 护罩 / 生机这类「续航」效果的等级曲线——比伤害平缓得多。
+ *
+ * 伤害按攻击的百分比结算，吃满 SPELL_LV_MULT（×3.2）只是「一击更重」；
+ * 续航却是按**自身气血的百分比**结算，同样乘 3.2 就意味着一式满级疗伤
+ * 恢复 192% 气血——任何疗伤式到五级都等于「回满血」，续航从此不设上限。
+ * 实测后果：九重雷劫把雷威调到三倍，备足的与仓促的仍然 20/20 全部飞升，
+ * 因为撑不撑得住根本不由积累决定，而由「你有没有点满一式疗伤」决定。
+ */
+export const SPELL_LV_SUSTAIN = [1, 1.1, 1.2, 1.3, 1.4];
+
 /** 某一级的威力倍率（等级越界自动夹紧）。 */
 export function spellPower(lv: number): number {
   return SPELL_LV_MULT[Math.max(0, Math.min(SPELL_MAX_LV - 1, lv - 1))];
+}
+
+/** 某一级的续航倍率（疗伤/护罩/生机用，等级越界自动夹紧）。 */
+export function spellSustain(lv: number): number {
+  return SPELL_LV_SUSTAIN[Math.max(0, Math.min(SPELL_MAX_LV - 1, lv - 1))];
 }
 
 const S = (

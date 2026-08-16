@@ -1,5 +1,6 @@
 // 自动通关驱动器（文案 QA 用）：脚本化 GameIO 全速跑完一局，输出全程文本。
-// 运行：npx tsx playtest.ts [seed 无效，纯随机] > /tmp/playthrough.txt
+// 运行：npx tsx playtest.ts [剧本 1-4] [种子]  > /tmp/playthrough.txt
+// 给了种子即可复现同一局（复现 bug 用）；不给则每次都不一样。
 
 process.env.FANGU_SAVE_DIR ??= '/tmp/fangu-playtest'; // 结局自动存档重定向，勿覆盖真实存档
 
@@ -9,8 +10,11 @@ import { ORIGINS, SECTS, SCENARIOS } from './src/content.js';
 import { START_YEAR } from './src/content/world.js';
 import { createPlayer } from './src/core/character.js';
 import { runGame } from './src/core/engine.js';
+import { seedRng, random } from './src/core/rng.js';
 
 const scenarioArg = process.argv[2]; // 可指定剧本：1-4
+const seedArg = process.argv[3];      // 可指定种子：同种子复现同一局
+if (seedArg !== undefined) seedRng(Number(seedArg));
 const strip = (s: string) => s.replace(/\x1b\[[0-9]*m/g, '');
 
 class BotIO implements GameIO {
@@ -28,7 +32,7 @@ class BotIO implements GameIO {
       // 主菜单：修为满则突破，否则闭关
       ans = '__MENU__';
     } else if (question.startsWith('你的选择')) {
-      ans = choices ? choices[Math.floor(Math.random() * choices.length)] : '1';
+      ans = choices ? choices[Math.floor(random() * choices.length)] : '1';
     } else if (question.includes('(y/n)')) {
       ans = 'y';
     } else {

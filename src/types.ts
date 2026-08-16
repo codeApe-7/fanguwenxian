@@ -68,6 +68,7 @@ export interface FemaleLead {
   met: boolean;
   dao: boolean;     // 是否已是道侣
   seen?: Record<string, boolean>; // 已触发的专属场景（好感里程碑等，仅一次）
+  taught?: number;  // 自她上次跨大境界以来，与她论道/双修过几次——她能教的本来就有限
 }
 
 export interface GameState {

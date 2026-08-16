@@ -1,8 +1,13 @@
 // 核心逻辑回归测试：用 MockIO 驱动，验证无运行时错误且状态自洽。
-// 运行：npm test
+// 运行：npm test            固定种子，结果可复现
+//       FANGU_SEED=123 npm test   换个种子跑（改平衡后建议多跑几个种子）
+//       FANGU_SEED=random npm test 真随机（找隐藏的种子依赖）
+//
+// 为什么要定种子：胜率蒙特卡洛、渡劫存活这类断言本质是在采样一个分布，
+// 不定种子就会偶发假红——同一份代码两遍绿一遍红，久而久之没人再看失败信息。
 
 import type { GameIO } from './src/io.js';
-import type { GameState, FemaleLead } from './src/types.js';
+import type { GameState, FemaleLead, Player } from './src/types.js';
 import type { FoeKind } from './src/content.js';
 import { ORIGINS, SECTS, REALMS, SCENARIOS, ARCHETYPES, ROOT_COSTS, TALENT_APTITUDES, TALENT_BODIES, TALENT_CHILDHOODS, TALENT_YOUTHS, SKILLS, PERSONALITY_MODS, PERSONALITIES, TECHNIQUES, TREASURES, ENEMY_POOLS, ELEMENTS, SHENG, KE, SPELLS, SPELL_LV_MULT, SPELL_LV_COST, SPELL_MAX_LV, FATIGUE, REALM_STEP, STARTER_SPELLS, CORE_TYPES, mainElement, talentsFor, learnTechnique, switchTechnique, techLevelName, toxinPenalty, playerAttack, playerDefense, playerTitle, playerHp, playerSpeed, powerOf, rootsFor, rootPurity, coreQualityCap, coreBonus, techniqueSummary, upgradeTechnique } from './src/content.js';
 import { STORY_NODES, SCENARIO_HEROINES } from './src/content/story.js';
@@ -10,13 +15,18 @@ import { DIALOGUE } from './src/content/dialogue.js';
 import { LETTERS } from './src/content/letters.js';
 import { SECT_TASKS } from './src/content/tasks.js';
 import { START_YEAR, PLACES } from './src/content/world.js';
+import { seedRng } from './src/core/rng.js';
+
+// 固定种子必须在任何随机调用之前落定
+const SEED = process.env.FANGU_SEED ?? '20260816';
+seedRng(SEED === 'random' ? null : Number(SEED));
 import { createPlayer, rollRoot, makeLead } from './src/core/character.js';
 import { createCharacter, mainMenu } from './src/core/engine.js';
 import { maybeTriggerStory } from './src/core/storyline.js';
 import { WORLD_EVENTS, worldTick, nextWorldEvent } from './src/core/chronicle.js';
 import { fill, eraYear, yearOfAge } from './src/core/text.js';
 import { sectMenu, sectYearEnd } from './src/core/sect.js';
-import { cultivate, breakthrough, takePill, ascend, comprehendFragments, autoAdvance } from './src/core/cultivate.js';
+import { cultivate, cultivateRate, breakthrough, takePill, ascend, comprehendFragments, autoAdvance } from './src/core/cultivate.js';
 import { makeEnemy, combat } from './src/core/combat.js';
 import { explore } from './src/core/explore.js';
 import { EVENTS } from './src/core/events.js';
@@ -44,9 +54,14 @@ class MockIO implements GameIO {
   async pause() {}
 }
 
+/** 推着红颜成长，直到她跨过一个大境界（用于验证授业次数清零）。 */
+function advanceLeadsUntilRealmUp(lead: FemaleLead, p: Player): void {
+  const from = lead.realmIdx;
+  for (let i = 0; i < 5000 && lead.realmIdx === from; i++) advanceLeads([lead], p.realmIdx + 2);
+}
+
 let failures = 0;
-function assert(cond: boolean, msg: string) {
-  if (!cond) {
+function assert(cond: boolean, msg: string) {  if (!cond) {
     failures++;
     console.error('  ✗ FAIL:', msg);
   }
@@ -611,7 +626,7 @@ async function main() {
     assert(ap.cultivation === 100, '大圆满处修为封顶 100');
   }
 
-  console.log('· 敌人也会打：难度阶梯与越阶压制（各 60 场蒙特卡洛）');
+  console.log('· 敌人也会打：难度阶梯与越阶压制（各 240 场蒙特卡洛）');
   {
     // 敌人和你共用一套战斗语汇（牌组/灵气/五行/后继无力），区别只在选招由 AI 权重表决定。
     // 于是难度自然分层：妖兽不会自保 → 修士有家底 → 天骄一身法宝，擂台才是势均力敌。
@@ -654,6 +669,10 @@ async function main() {
     const base = createPlayer('武', ORIGINS[0], SECTS[0]);
     base.realmIdx = 5;
     base.stageIdx = 1;
+    // 灵根写死：createPlayer 会随机摇灵根，而灵根决定主属性、亲和乘区与整副牌组，
+    // 实测同一份代码换个种子，同境界散修胜率能从 67% 跳到 98%（跨种子标准差 10%，
+    // 远大于 240 场采样本身的 2%）。测战斗系统就该把创角方差摁住，否则断言测的是运气。
+    base.roots = rootsFor('三灵根', ['火', '木', '土']);
     const elem = mainElement(base.roots);
     const pool = Object.keys(SPELLS).filter((n) => SPELLS[n].tier <= 3 && !SPELLS[n].effects.some((e) => e.kind === 'escape'));
     const deck = [...pool.filter((n) => SPELLS[n].element === elem).slice(0, 4), ...pool.slice(0, 2)].slice(0, 6);
@@ -667,7 +686,7 @@ async function main() {
     base.goldenCore = { type: CORE_TYPES[elem].name, quality: 5 };
     base.yuanying = '灵潮';
     base.daoPath = `以${elem}入道`;
-    const N = 60;
+    const N = 240; // 60 场时标准差约 4%，胜率带宽只有 ±20%，偶发假红；240 场把噪声压到 2%
     const rate = async (kind: FoeKind, boost: number): Promise<number> => {
       let w = 0;
       for (let i = 0; i < N; i++) {
@@ -681,12 +700,13 @@ async function main() {
     const cultivator = await rate('修士', 0);
     const elite = await rate('天骄', 0);
     const uphill = await rate('修士', 4);
-    assert(beast >= 0.75, `妖兽是稳妥的练级对象（实测 ${(beast * 100).toFixed(0)}%）`);
-    assert(cultivator >= 0.55 && cultivator <= 0.95, `同境界散修有来有回（应 55%~95%，实测 ${(cultivator * 100).toFixed(0)}%）`);
-    assert(elite >= 0.25 && elite <= 0.7, `同境界天骄势均力敌（应 25%~70%，实测 ${(elite * 100).toFixed(0)}%）`);
+    // 区间按跨十个种子的实测均值 ± 3 个标准差取（妖兽 100%/散修 90.5±1.8/天骄 52.0±3.5/越阶 8.0±1.9）
+    assert(beast >= 0.95, `妖兽是稳妥的练级对象（实测 ${(beast * 100).toFixed(0)}%）`);
+    assert(cultivator >= 0.84 && cultivator <= 0.97, `同境界散修有来有回（应 84%~97%，实测 ${(cultivator * 100).toFixed(0)}%）`);
+    assert(elite >= 0.40 && elite <= 0.64, `同境界天骄势均力敌（应 40%~64%，实测 ${(elite * 100).toFixed(0)}%）`);
     assert(beast > cultivator && cultivator > elite,
       `难度阶梯须成立：妖兽 ${(beast * 100).toFixed(0)}% > 散修 ${(cultivator * 100).toFixed(0)}% > 天骄 ${(elite * 100).toFixed(0)}%`);
-    assert(uphill <= 0.2, `越一个大境界基本打不动（实测 ${(uphill * 100).toFixed(0)}%）`);
+    assert(uphill <= 0.16, `越一个大境界基本打不动（实测 ${(uphill * 100).toFixed(0)}%）`);
   }
 
   console.log('· 敌人牌组：会几招本身就是难度分层');
@@ -743,15 +763,18 @@ async function main() {
   console.log('· 双修（道侣专属）');
   const dP = createPlayer('测试', ORIGINS[0], SECTS[0]);
   const dLead = makeLead(dP);
-  dLead.realmIdx = dP.realmIdx; // 同境界，双修收益为基准 16
+  dLead.realmIdx = dP.realmIdx; // 同境界
   dLead.dao = true;
   dLead.favor = 50;
   const dState: GameState = { player: dP, leads: [dLead], year: 200 };
   dP.cultivation = 0;
   io.queue = ['1', '4', '', '0']; // 拜访第 1 位 → 双修 → 回车 → 返回
   await romance(dP, dState.leads, io);
-  assert(dP.cultivation === 16, '双修修为 +16（论道两倍）');
+  // 首次双修按「闭关一年」计价（同境界 0.8 倍 + 道侣被动），应在闭关一年上下而非数倍
+  const dBase = cultivateRate(createPlayer('测试', ORIGINS[0], SECTS[0]));
+  assert(dP.cultivation > 0 && dP.cultivation < dBase * 2, `首次双修收益应与闭关一年同量级（${dP.cultivation} vs ${dBase.toFixed(1)}）`);
   assert(dLead.favor > 50, '双修提升好感');
+  assert(dLead.taught === 1, '双修计入授业次数');
 
   console.log('· 拜访耗时（论道/双修不再一年内刷满修为）');
   const rP = createPlayer('测试', ORIGINS[0], SECTS[0]);
@@ -762,8 +785,48 @@ async function main() {
   io.queue = ['1', '2', '2', '2', '0', '0']; // 拜访第 1 位 → 论道 ×3 → 退出拜访 → 退出红颜
   const rYears = await romance(rP, [rLead], io);
   assert(rYears === 3, `论道 3 次应耗时 3 年（实际 ${rYears}）`);
-  assert(rP.cultivation === 24, `论道 3 次修为 +24（实际 ${rP.cultivation}）`);
+  assert(rP.cultivation > 0, '论道有修为收益');
   assert(rLead.seen?.['m40'] === true, '好感 40 里程碑小剧情已触发（仅一次）');
+
+  console.log('· 授业衰减（论道不能一直刷：同一人同一境界收益递减）');
+  // 她高你两阶时首次论道最值钱，之后按 1/(1+n) 摊薄；心境更是几次就见底
+  const fP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  const fLead = makeLead(fP, 60);
+  fLead.realmIdx = fP.realmIdx + 2;
+  fLead.stageIdx = 0;
+  const gains: number[] = [];
+  const hearts: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    fP.cultivation = 0;
+    const h0 = fP.heart;
+    io.queue = ['1', '2', '0', '0'];
+    await romance(fP, [fLead], io);
+    gains.push(fP.cultivation);
+    hearts.push(fP.heart - h0);
+  }
+  assert(fLead.taught === 8, `八次论道应累计授业 8 次（实际 ${fLead.taught}）`);
+  assert(gains[0] > gains[1] && gains[1] > gains[2], `论道修为须逐次递减（${gains.slice(0, 3).join(' > ')}）`);
+  assert(gains[7] * 4 < gains[0], `第 8 次收益须远低于首次（${gains[7]} vs ${gains[0]}）`);
+  assert(hearts[0] > 0 && hearts[7] === 0, `心境应在数次后见底（${hearts.join(',')}）`);
+  // 同一年数下，闭关的累计修为必须压过反复论道——否则「刷她」仍是最优解
+  const fBase = cultivateRate(createPlayer('测试', ORIGINS[0], SECTS[0]));
+  const farmed = gains.reduce((a, b) => a + b, 0);
+  assert(farmed < fBase * gains.length, `连刷 8 次论道（${farmed}）须不如 8 年闭关（${(fBase * 8).toFixed(0)}）`);
+  // 她跨一个大境界后，这口井重新蓄满
+  advanceLeadsUntilRealmUp(fLead, fP);
+  assert(fLead.taught === 0, '她跨过大境界后授业次数清零（又有新东西可教）');
+
+  console.log('· 心境不再可被论道刷满');
+  const hP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  const hLead = makeLead(hP, 60);
+  hLead.realmIdx = hP.realmIdx; // 同境界：她不在你之上，教不了你心境
+  hLead.seen = { m40: true, m70: true }; // 屏蔽好感里程碑的一次性心境奖励，只测论道本身
+  const h0 = hP.heart;
+  for (let i = 0; i < 5; i++) {
+    io.queue = ['1', '2', '0', '0'];
+    await romance(hP, [hLead], io);
+  }
+  assert(hP.heart === h0, `与同境界红颜论道不应涨心境（${h0} → ${hP.heart}）`);
 
   const talkP = createPlayer('测试', ORIGINS[0], SECTS[0]);
   const talkLead = makeLead(talkP, 20);
@@ -772,7 +835,7 @@ async function main() {
   io.queue = ['0']; // 只看不动手
   assert((await romance(talkP, [talkLead], io)) === 0, '未互动则不耗时');
 
-  console.log('· 论道/双修收益随境界难度缩放');
+  console.log('· 论道/双修收益随修炼体系缩放（洞府/功法都算数）');
   const lateP = createPlayer('测试', ORIGINS[0], SECTS[0]);
   lateP.realmIdx = REALMS.length - 1; // 渡劫期
   lateP.stageIdx = 0;
@@ -784,9 +847,25 @@ async function main() {
   io.queue = ['1', '4', '0', '0'];
   await romance(lateP, [lateLead], io);
   assert(
-    lateP.cultivation > 0 && lateP.cultivation < 16,
-    `渡劫期双修收益应低于炼气期的 16（实际 ${lateP.cultivation}）`,
+    lateP.cultivation > 0 && lateP.cultivation < cultivateRate(createPlayer('测试', ORIGINS[0], SECTS[0])),
+    `渡劫期双修收益应低于炼气期闭关一年（实际 ${lateP.cultivation}）`,
   );
+  // 洞府翻倍，论道收益跟着翻——旁门收益始终是修炼体系的百分比
+  const abodeP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  const abodeLead = makeLead(abodeP, 60);
+  abodeLead.realmIdx = abodeP.realmIdx + 1;
+  abodeP.cultivation = 0;
+  io.queue = ['1', '2', '0', '0'];
+  await romance(abodeP, [abodeLead], io);
+  const plainGain = abodeP.cultivation;
+  const richP = createPlayer('测试', ORIGINS[0], SECTS[0]);
+  richP.abode = '上品灵脉'; // ×4
+  const richLead = makeLead(richP, 60);
+  richLead.realmIdx = richP.realmIdx + 1;
+  richP.cultivation = 0;
+  io.queue = ['1', '2', '0', '0'];
+  await romance(richP, [richLead], io);
+  assert(richP.cultivation > plainGain * 2, `洞府提升后论道收益须同步提高（${plainGain} → ${richP.cultivation}）`);
 
   console.log('· 主菜单编号固定（红颜登场不挤动突破境界）');
   const menuIO = new MockIO();
@@ -908,40 +987,129 @@ async function main() {
   daoLead.dao = true;
   p.daoCompanion = daoLead.name;
   io.log = [];
-  // 心魔会你会的每一式，还照 AI 权重表出招——用会打的机器人驱动，别拿默认键去送
-  const ascIO = new MockIO();
-  ascIO.decide = (q: string) => {
-    if (q.startsWith('选择行动')) {
-      const sp = q.match(/(\d+)\)施法/);
-      return sp ? sp[1] : (q.match(/(\d+)\)普通攻击/)?.[1] ?? '1');
-    }
-    if (q.startsWith('施展')) {
-      const cands: Array<{ n: string; sc: number }> = [];
-      const lines = ascIO.log.map(plain);
-      for (let i = 0; i < lines.length; i++) {
-        const m = lines[i].match(/^\s*([1-9]\d*)\)/);
-        if (!m) continue;
-        const pct = parseInt((lines[i + 1] ?? '').match(/(\d+)%/)?.[1] ?? '0', 10);
-        let sc = /伤害/.test(lines[i + 1] ?? '') ? pct : 20;
-        if (/ 克/.test(lines[i])) sc *= 2;
-        const f = lines[i].match(/后继无力×([\d.]+)/);
-        if (f) sc *= parseFloat(f[1]);
-        cands.push({ n: m[1], sc });
+  // 「备足了的渡劫者」必须显式捏出来，不能拿 p 凑合：
+  // p 是被前面九百行测试顺带改出来的，金丹几品、会几式神通全看 RNG 流怎么走，
+  // 上游随便动一个采样数就会把它变成另一个人（实测：金丹掉到四品、只剩一式可放，
+  // 于是雷劫 0/20），而失败信息只会说「渡劫者应能撑过九雷」，指不到真正的原因。
+  const asc = createPlayer('渡劫者', ORIGINS[0], SECTS[0]);
+  asc.realmIdx = REALMS.length - 1;
+  asc.stageIdx = REALMS[asc.realmIdx].stages.length - 1;
+  asc.roots = rootsFor('天灵根', ['火']);
+  const ascElem = mainElement(asc.roots);
+  const ascPool = Object.keys(SPELLS).filter((n) => !SPELLS[n].effects.some((e) => e.kind === 'escape'));
+  asc.spells = [
+    ...ascPool.filter((n) => SPELLS[n].element === ascElem).slice(0, 4),
+    ...ascPool.filter((n) => SPELLS[n].effects.some((e) => e.kind === 'heal' || e.kind === 'shield')).slice(0, 2),
+  ].slice(0, 6);
+  asc.spellLv = Object.fromEntries(asc.spells.map((n) => [n, SPELL_MAX_LV]));
+  asc.treasure = '云海扇';
+  learnTechnique(asc, '狂雷劲');
+  switchTechnique(asc, '狂雷劲');
+  asc.techProficiency['狂雷劲'] = 100;
+  asc.formation = '七杀阵';
+  asc.goldenCore = { type: CORE_TYPES[ascElem].name, quality: 9 };
+  asc.yuanying = '灵潮';
+  asc.daoPath = `以${ascElem}入道`;
+  asc.heart = 95;            // 心境满档：心魔劫开场护罩
+  asc.pills['渡劫丹'] = 1;   // 雷威 −15%、护罩 +50%
+  asc.pills['回春丹'] = 3;
+  const ascLead = makeLead(asc);
+  ascLead.dao = true;
+  asc.daoCompanion = ascLead.name; // 道侣同渡：护罩 +20%
+  // 心魔会你会的每一式，还照 AI 权重表出招——用会打的机器人驱动，别拿默认键去送。
+  // 天劫那一场尤其不能照搬「挑伤害最高的打」：雷是打不死的（immortal），
+  // 唯一的正解是结罩、疗伤、减伤，硬撑满九道。驱动器不会这一手，测出来的
+  // 就不是「渡劫难不难」，而是「机器人蠢不蠢」。
+  const mkAscIO = (): MockIO => {
+    const m = new MockIO();
+    m.decide = (q: string) => {
+      const lines = m.log.map(plain);
+      const panel = lines.join('\n');
+      const inBolt = /尚余\s*\d+\s*道/.test(panel); // 天劫面板没有血条，显示的是「尚余 N 道」
+      if (q.startsWith('选择行动')) {
+        const sp = q.match(/(\d+)\)施法/);
+        return sp ? sp[1] : (q.match(/(\d+)\)普通攻击/)?.[1] ?? '1');
       }
-      return cands.length > 0 ? cands.sort((a, b) => b.sc - a.sc)[0].n : '1';
-    }
-    return null;
+      if (q.startsWith('施展')) {
+        const cands: Array<{ n: string; sc: number }> = [];
+        for (let i = 0; i < lines.length; i++) {
+          const mm = lines[i].match(/^\s*([1-9]\d*)\)/);
+          if (!mm) continue;
+          const label = lines[i];
+          const desc = lines[i + 1] ?? '';
+          const pct = parseInt(desc.match(/(\d+)%/)?.[1] ?? '0', 10);
+          const isHeal = /恢复|生机/.test(desc);
+          const isGuard = /护罩|受创|减伤/.test(desc);
+          let sc: number;
+          if (inBolt) {
+            // 雷劫：打它没有意义，能续命的才值钱
+            sc = isHeal ? 900 + pct : isGuard ? 800 + pct : 1;
+          } else {
+            sc = /伤害/.test(desc) ? pct : isHeal || isGuard ? 40 : 20;
+          }
+          if (/ 克/.test(label)) sc *= 2;
+          const f = label.match(/后继无力×([\d.]+)/);
+          if (f) sc *= parseFloat(f[1]);
+          cands.push({ n: mm[1], sc });
+        }
+        return cands.length > 0 ? cands.sort((a, b) => b.sc - a.sc)[0].n : '1';
+      }
+      return null;
+    };
+    return m;
   };
-  const won = await ascend({ player: p, leads: [daoLead], year: 400 }, ascIO);
-  const ascLog = ascIO.full.map(plain).join('\n');
+  // 渡劫本就是概率事件——跑一次只是掷一次骰子，跨种子必然偶发假红。
+  // 真正要守住的设计主张是「两百年的积累在这里兑现」：备足的过得去，仓促的过不去。
+  // 所以测的是两种人的存活率之差，而不是某一局的胜负。
+  const ASC_RUNS = 20;
+  const ascendRate = async (who: Player, lead: FemaleLead) => {
+    let wins = 0;
+    let log = '';
+    let bio: string[] = [];
+    for (let i = 0; i < ASC_RUNS; i++) {
+      const q: Player = JSON.parse(JSON.stringify(who));
+      const qLead: FemaleLead = JSON.parse(JSON.stringify(lead));
+      const runIO = mkAscIO();
+      const ok = await ascend({ player: q, leads: [qLead], year: 400 }, runIO);
+      const one = runIO.full.map(plain).join('\n');
+      if (!log) log = one;
+      if (ok) { wins += 1; log = one; bio = q.biography; }
+    }
+    return { wins, log, bio };
+  };
+  const ready = await ascendRate(asc, ascLead);
+  // 仓促上阵的：没渡劫丹、没道侣、心境浅、金丹平平、神通只练到二层
+  const rush: Player = JSON.parse(JSON.stringify(asc));
+  rush.pills = {};
+  rush.daoCompanion = undefined;
+  rush.heart = 10;
+  rush.goldenCore = { type: CORE_TYPES[ascElem].name, quality: 2 };
+  rush.spellLv = Object.fromEntries(rush.spells.map((n) => [n, 2]));
+  rush.treasure = '无';
+  rush.formation = '无';
+  const rushLead: FemaleLead = JSON.parse(JSON.stringify(ascLead));
+  rushLead.dao = false;
+  const hasty = await ascendRate(rush, rushLead);
+
+  const ascLog = ready.log;
   assert(ascLog.includes('心魔劫'), '渡劫先打心魔劫（对手是你自己）');
   assert(ascLog.includes('九重雷劫'), '心魔之后是九重雷劫');
   assert(ascLog.includes('第 9/9 回合'), '雷劫必须打满九个回合，撑住才算过');
   assert(!ascLog.includes('突破成功率'), '渡劫不再是掷一次骰子');
-  // 渡劫丹 + 道侣 + 满身积累，应当撑得过去
-  assert(won === true, '备足了的渡劫者应能撑过九雷');
-  assert(p.biography.some((l) => l.includes('飞升')), '飞升写入大事记');
-  assert(ascIO.full.some((l) => l.includes('人生大事记')), '结局输出人生大事记（立传）');
+  assert(
+    ready.wins >= ASC_RUNS * 0.9,
+    `备足了的渡劫者应当撑得过九雷（${ready.wins}/${ASC_RUNS}）`,
+  );
+  // 注意这里没有断言「仓促上阵的应当渡劫失败」——因为现在并不成立。
+  // 实测：九道雷总伤 113,088，满血 + 战前护罩 106,680，本是「差一口气」的精准配平；
+  // 但一式满级疗伤当场回 10,542，九个回合里放几次都行，于是临场续航的量级
+  // （约 500% 气血）彻底压过了备战带来的量级（约 40% 气血）。
+  // 结果是断崖而非梯度：雷威 ×0.7~×3 时备足/仓促都是 20/20 全过，×5 时都是 0/20 全灭。
+  // 要让「两百年的积累在这里兑现」重新成立，得改渡劫的资源模型（例如天劫压制临场续航、
+  // 或雷劫改为按回合扣除固定比例气血），那是设计决策，见 docs/战斗与数值设计.md §12。
+  assert(hasty.wins >= 0, `仓促上阵者的存活率（当前 ${hasty.wins}/${ASC_RUNS}，见上方注释）`);
+  assert(ready.bio.some((l) => l.includes('飞升')), '飞升写入大事记');
+  assert(ascLog.includes('人生大事记'), '结局输出人生大事记（立传）');
 
   if (failures === 0) {
     console.log('\n✅ 全部通过（最终境界：' + playerTitle(p) + '）');

@@ -78,6 +78,7 @@ export function loadGame(io: GameIO): GameState | null {
     // 红颜境界字段迁移（旧档仅有 realm 字符串）
     for (const l of s.leads ?? []) {
       l.seen ??= {};
+      l.taught ??= 0; // 授业衰减（0.7.1）：旧档从零算起
       if (typeof l.realmIdx !== 'number') {
         let found = false;
         for (let i = 0; i < REALMS.length; i++) {

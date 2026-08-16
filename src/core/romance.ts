@@ -6,6 +6,7 @@ import type { GameIO } from '../io.js';
 import type { Player, FemaleLead } from '../types.js';
 import { PERSONALITY_MODS, REALMS, PILLS, MATERIALS, sectOf } from '../content.js';
 import { dialogueOf } from '../content/dialogue.js';
+import { cultivateRate } from './cultivate.js';
 import { fill, addBio } from './text.js';
 import { green, red, yellow, magenta, dim } from '../colors.js';
 import { pick, randint, chance } from './rng.js';
@@ -28,17 +29,29 @@ function realmGapMult(p: Player, l: FemaleLead): number {
   return 1;
 }
 
-/** 红颜相对主角高出的境界数（用于论道/双修额外收益）。 */
+/** 红颜相对主角高出的大境界数（用于论道/双修额外收益），0~2。 */
 function realmLead(l: FemaleLead, p: Player): number {
   return Math.max(0, l.realmIdx - p.realmIdx);
 }
 
 /**
- * 境界难度系数（与闭关同源）。论道/双修的修为收益按此缩放，
- * 否则高境界下闭关一年仅得数点，而论道/双修恒为两位数，会架空闭关系统。
+ * 授业衰减：同一个人、同一个境界，第 n 次论道/双修的收益倍率（调和衰减 1/(1+n)）。
+ *
+ * 旧版论道/双修是恒定收益、无冷却、无上限，于是「反复论道」成了最优解——
+ * 一位白身修士靠双修每年能拿到闭关的 4.2 倍，还顺带把心境刷满。
+ * 她能教你的东西本来就是有限的：讲过一遍的道理，再讲十遍也还是那一遍。
+ * 想再有所得，要么等她自己突破（跨大境界即清零，见 advanceLeads），要么去认识别的人。
  */
-function realmScale(p: Player): number {
-  return REALMS[p.realmIdx]?.difficulty ?? 1;
+function teachDecay(l: FemaleLead): number {
+  return 1 / (1 + (l.taught ?? 0));
+}
+
+/** 收益见底时给一句提示——告诉玩家「不是坏了，是这口井暂时汲干了」。 */
+function teachHint(l: FemaleLead, p: Player): string {
+  if (l.realmIdx <= p.realmIdx) {
+    return `（她的修为已不在你之上，坐而论道各有所得，却再难教你心境。）`;
+  }
+  return `（该说的她都已说尽——待她再跨一道境界，方有新意可陈。）`;
 }
 
 /** 礼物珍贵度 -> 基础好感（越珍贵越高）。 */
@@ -57,6 +70,7 @@ export function advanceLeads(leads: FemaleLead[], playerRealm: number): void {
     } else if (l.realmIdx < REALMS.length - 1) {
       l.realmIdx += 1;
       l.stageIdx = 0;
+      l.taught = 0; // 她自己跨过一道关口，眼界重开，又有新东西可与你说
     } else {
       continue;
     }
@@ -140,6 +154,9 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<numbe
     io.print(lead.dao ? ' 3) 赠礼      4) 双修' : ' 3) 赠礼      4) 结为道侣（需好感≥80）');
     io.print(' 0) 返回');
     io.print(dim('（交谈/论道/赠礼/双修各耗时 1 年，赠礼被婉拒亦然）'));
+    if ((lead.taught ?? 0) > 0) {
+      io.print(dim(`（与她论道已 ${lead.taught} 回，所得渐薄——她再进一境，方能重开新篇）`));
+    }
     const ch = await io.ask('选择：');
     if (ch === '0' || ch === '') return years;
     const d = dialogueOf(lead.personality);
@@ -157,12 +174,19 @@ async function visitLead(p: Player, lead: FemaleLead, io: GameIO): Promise<numbe
         continue;
       }
       const g = Math.max(1, Math.round(randint(5, 12) * modsOf(lead).debate * realmGapMult(p, lead)));
-      const cult = Math.max(1, Math.round((8 + realmLead(lead, p) * 4) * realmScale(p)));
+      const lift = realmLead(lead, p);
+      const decay = teachDecay(lead);
+      // 修为按「闭关一年」计价：她高你两阶时头一回抵一年半闭关，之后按 1/2、1/3… 迅速摊薄
+      const cult = Math.max(1, Math.round(cultivateRate(p) * (0.4 + 0.6 * lift) * decay));
+      // 心境只从「在你之上的人」身上得：她与你同阶或不如你，论道是切磋，不是受教
+      const hg = Math.floor(3 * lift * decay);
       lead.favor = Math.min(100, lead.favor + g);
-      p.cultivation = Math.min(100, p.cultivation + cult);
-      p.heart = Math.min(100, p.heart + 3);
+      p.cultivation += cult;
+      if (hg > 0) p.heart = Math.min(100, p.heart + hg);
+      lead.taught = (lead.taught ?? 0) + 1;
       await io.narrate(fill(pick(d.debate), ctxOf(p, lead)));
-      io.print(green(`论道一载，好感 +${g}，修为 +${cult}，心境 +3。`));
+      io.print(green(`论道一载，好感 +${g}，修为 +${cult}${hg > 0 ? `，心境 +${hg}` : ''}。`));
+      if (hg <= 0) io.print(dim(teachHint(lead, p)));
       await maybeMilestone(p, lead, io);
       years += 1;
     } else if (ch === '3') {
@@ -256,17 +280,21 @@ async function makeDaoCompanion(p: Player, lead: FemaleLead, io: GameIO): Promis
   return true;
 }
 
-/** 双修（道侣专属）：修为收益为论道两倍，合欢宗等双修宗门再加成，并随境界难度缩放。 */
+/** 双修（道侣专属）：修为按闭关计价、合欢宗等双修宗门再加成，同样吃授业衰减。 */
 async function dualCultivate(p: Player, lead: FemaleLead, io: GameIO): Promise<void> {
   const dual = sectOf(p)?.dualBonus ?? 0; // 合欢宗双修加成 +50%
-  // 红颜境界越高收益越大；再按境界难度缩放，避免高境界下反超闭关
-  const gain = Math.max(1, Math.round((16 + realmLead(lead, p) * 6) * (1 + dual) * realmScale(p)));
+  const lift = realmLead(lead, p);
+  const decay = teachDecay(lead);
+  const gain = Math.max(1, Math.round(cultivateRate(p) * (0.8 + 0.6 * lift) * (1 + dual) * decay));
+  const hg = Math.floor(2 * decay);
   const favor = randint(5, 10);
   lead.favor = Math.min(100, lead.favor + favor);
-  p.cultivation = Math.min(100, p.cultivation + gain);
-  p.heart = Math.min(100, p.heart + 2);
+  p.cultivation += gain;
+  if (hg > 0) p.heart = Math.min(100, p.heart + hg);
+  lead.taught = (lead.taught ?? 0) + 1;
   await io.narrate(magenta(`你与 ${lead.name} 灵息相引，坎离既济，共参大道。`));
   await io.narrate(fill(dialogueOf(lead.personality).dual, ctxOf(p, lead)));
-  io.print(green(`双修圆满：修为 +${gain}，好感 +${favor}，心境 +2。`));
-  if (p.cultivation >= 100) io.print(yellow('修为已臻圆满，可尝试突破境界。'));
+  io.print(green(`双修圆满：修为 +${gain}，好感 +${favor}${hg > 0 ? `，心境 +${hg}` : ''}。`));
+  if (hg <= 0) io.print(dim(teachHint(lead, p)));
+  if (p.cultivation >= 100) io.print(yellow('修为已臻圆满，可尝试冲击大境界瓶颈。'));
 }

@@ -15,8 +15,13 @@ import { chance, randint, pick } from './rng.js';
 import { addBio, printBiography } from './text.js';
 import { combat, makeEnemy } from './combat.js';
 
-/** 闭关修炼一年，返回本年度修为增长。 */
-export function cultivate(p: Player): number {
+/**
+ * 闭关一年的基准收益（纯函数，不消耗符箓、不改状态）。
+ * 灵根、功法、宗门、阵法、洞府、道侣、丹毒全部计入——这是「你这一年本来能修多少」。
+ * 论道 / 双修的修为收益按它的百分比计价，于是任何旁门收益都跟着你的修炼体系走，
+ * 不会因为你不置办洞府就反而显得划算（旧版白身双修 = 4.2 倍闭关，就是这么来的）。
+ */
+export function cultivateRate(p: Player): number {
   const diff = REALMS[p.realmIdx].difficulty;
   let gain = 10 * p.rootMult * (p.aptitude ?? 1.0) * (TECHNIQUES[p.technique]?.mult ?? 1) * diff * p.cheatBonus;
   gain *= techPower(p); // 功法熟练度加成
@@ -29,12 +34,18 @@ export function cultivate(p: Player): number {
     if (bonus > 0.2) bonus *= sectPower(p);
     gain *= 1 + bonus;
   }
+  gain *= toxinPenalty(p); // 丹毒影响修炼效率
+  return Math.max(1, gain);
+}
+
+/** 闭关修炼一年，返回本年度修为增长。 */
+export function cultivate(p: Player): number {
+  let gain = cultivateRate(p);
   // 聚灵符自动消耗
   if ((p.talismans['聚灵符'] ?? 0) > 0) {
     p.talismans['聚灵符'] -= 1;
     gain += TALISMANS['聚灵符'].value;
   }
-  gain *= toxinPenalty(p); // 丹毒影响修炼效率
   // 灵石温养：剩余年数内闭关效率 +20%
   if ((p.spiritWarm ?? 0) > 0) {
     gain *= 1.2;

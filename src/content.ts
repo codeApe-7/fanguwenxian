@@ -210,8 +210,8 @@ export const TECHNIQUES: Record<string, TechniqueDef> = {
 // 数据量大，独立成库：见 content/spells.ts（效果组合 / 五行 / 灵气消耗 / 画面描写）。
 export type { EffectKind, SpellEffect, SpellDef } from './content/spells.js';
 export {
-  SPELLS, SPELL_LV_MULT, SPELL_LV_COST, SPELL_MAX_LV, SPELL_TIER_NAMES,
-  FATIGUE, spellPower, spellsOfTier, jadeSlipPrice,
+  SPELLS, SPELL_LV_MULT, SPELL_LV_COST, SPELL_MAX_LV, SPELL_TIER_NAMES, SPELL_LV_SUSTAIN,
+  FATIGUE, spellPower, spellSustain, spellsOfTier, jadeSlipPrice,
 } from './content/spells.js';
 
 /** 主修功法进阶顺序（道统现世/宗门战争/宗主传承按此升级）。 */
